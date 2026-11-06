@@ -11,6 +11,7 @@ import { supabase, type RideRecord } from "@/lib/supabase";
 import { newAnim, now } from "./three/anim";
 import Garage from "./Garage";
 import { ensurePlayer, type PlayerData } from "@/lib/player";
+import { MAPS } from "@/lib/maps";
 
 const Preview = dynamic(() => import("./Preview"), {
   ssr: false,
@@ -29,7 +30,8 @@ export default function Lobby() {
   const router = useRouter();
   const [p, setP] = useState<Profile>(DEFAULT_PROFILE);
   const [board, setBoard] = useState<RideRecord[] | null>(null);
-  const [tab, setTab] = useState<"distance" | "trick_score">("distance");
+  const [tab, setTab] = useState<"distance" | "trick_score" | "times">("distance");
+  const [times, setTimes] = useState<{ id: number; nickname: string; bike: string; ms: number }[] | null>(null);
   const [player, setPlayer] = useState<PlayerData | null>(null);
   const [playerErr, setPlayerErr] = useState("");
   const [error, setError] = useState("");
@@ -46,7 +48,21 @@ export default function Lobby() {
   // 미리보기에 장착 아이템 반영
   const shown: Profile = useMemo(() => ({ ...p, equip: player?.equipped ?? {} }), [p, player]);
 
+  const mapId = p.map ?? "village";
   useEffect(() => {
+    if (tab !== "times") return;
+    setTimes(null);
+    supabase
+      .from("bike_times")
+      .select("id,nickname,bike,ms")
+      .eq("map", mapId)
+      .order("ms", { ascending: true })
+      .limit(10)
+      .then(({ data }) => setTimes(data ?? []));
+  }, [tab, mapId]);
+
+  useEffect(() => {
+    if (tab === "times") return;
     setBoard(null);
     let q = supabase.from("bike_rides").select("*").order(tab, { ascending: false }).limit(10);
     if (tab === "trick_score") q = q.gt("trick_score", 0);
@@ -118,6 +134,19 @@ export default function Lobby() {
           </label>
 
           <div className="field">
+            <span>맵</span>
+            <div className="maps">
+              {MAPS.map((m) => (
+                <button key={m.id} className={mapId === m.id ? "mapcard on" : "mapcard"} onClick={() => set({ map: m.id })}>
+                  <span className="emoji">{m.emoji}</span>
+                  <b>{m.name}</b>
+                  <small>{m.desc}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="field">
             <span>옷 색깔</span>
             <div className="swatches">
               {COLORS.map((c) => (
@@ -170,8 +199,29 @@ export default function Lobby() {
           <div className="chips tabs">
             <button className={tab === "distance" ? "chip on" : "chip"} onClick={() => setTab("distance")}>🚴 최장 거리</button>
             <button className={tab === "trick_score" ? "chip on" : "chip"} onClick={() => setTab("trick_score")}>🤸 묘기 점수</button>
+            <button className={tab === "times" ? "chip on" : "chip"} onClick={() => setTab("times")}>⏱️ 타임어택</button>
           </div>
-          {board === null ? (
+          {tab === "times" ? (
+            <>
+              <p className="muted small-note">{MAPS.find((m) => m.id === mapId)?.emoji} {MAPS.find((m) => m.id === mapId)?.name} · {MAPS.find((m) => m.id === mapId)?.course.name}</p>
+              {times === null ? (
+                <p className="muted">불러오는 중…</p>
+              ) : times.length === 0 ? (
+                <p className="muted">아직 기록이 없어요. 첫 기록의 주인공이 되어보세요!</p>
+              ) : (
+                <ol className="board">
+                  {times.map((r, i) => (
+                    <li key={r.id}>
+                      <span className="rank">{["🥇", "🥈", "🥉"][i] ?? i + 1}</span>
+                      <span className="name">{getBike(r.bike).emoji} {r.nickname}</span>
+                      <span className="dist">{Math.floor(r.ms / 60000)}:{((r.ms % 60000) / 1000).toFixed(2).padStart(5, "0")}</span>
+                      <span />
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </>
+          ) : board === null ? (
             <p className="muted">불러오는 중…</p>
           ) : board.length === 0 ? (
             <p className="muted">아직 기록이 없어요. 첫 번째 주인공이 되어보세요!</p>
@@ -200,7 +250,8 @@ export default function Lobby() {
           <ul className="howto">
             <li><kbd>W</kbd>/<kbd>↑</kbd> 페달 · <kbd>S</kbd>/<kbd>↓</kbd> 브레이크</li>
             <li><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> 방향 · <kbd>Space</kbd> 점프</li>
-            <li><kbd>B</kbd> 절하기 · <kbd>H</kbd> 인사 · <kbd>C</kbd> 만세</li>
+            <li><kbd>B</kbd> 절하기 · <kbd>H</kbd> 인사 · <kbd>C</kbd> 만세 · <kbd>T</kbd> 🔔 따릉따릉</li>
+            <li>⏱️ 타임어택: 마을은 출발 아치부터 트랙 한 바퀴, 설산은 🚡 리프트로 정상에 올라 슬라럼 게이트 통과!</li>
             <li>공중에서 묘기: <kbd>Q</kbd> 백플립 · <kbd>F</kbd> 프론트플립 · <kbd>E</kbd> 360 · <kbd>G</kbd> 슈퍼맨 · <kbd>R</kbd> 노핸드</li>
             <li>묘기를 이어 쓰면 콤보 배율! 다 못 돌고 착지하면 꽈당 💥</li>
             <li><kbd>V</kbd> 카메라 전환 · <kbd>Enter</kbd> 채팅</li>

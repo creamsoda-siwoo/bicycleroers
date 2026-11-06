@@ -5,16 +5,17 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { getBike } from "@/lib/bikes";
 import { EMOTE_DUR, TRICK_MAP, type Profile, type TrickId } from "@/lib/profile";
-import {
-  BOOSTS, HOOPS, PLAZA_RADIUS, SKATE, SPAWN, TRACK_RADIUS, TRACK_WIDTH, groundHeight, inPond, randomStarPos, resolveCollisions,
-} from "@/lib/world";
-import { hoopFlash } from "../three/Landmarks";
+import { getMap, groundHeight, hoopFlash, randomStarPos, resolveCollisions } from "@/lib/maps";
+import { sfx } from "@/lib/sound";
 import { Rider } from "../three/Rider";
 import { Trail } from "../three/Custom";
 import { stars } from "../three/World";
 import { CRASH_DUR, now, type AnimState } from "../three/anim";
 import { input, trickQueue } from "./input";
 import type { Bubble, MovePayload, NetPlayer, Remote } from "./net";
+
+import { race, raceResults } from "./state";
+export { race, raceResults };
 
 export const stats = { speed: 0, dist: 0, stars: 0, x: 0, z: 0, trickScore: 0, airborne: false, boosting: false };
 
@@ -29,6 +30,12 @@ export const view = { mode: "chase" as "chase" | "front" | "top" };
 
 const GRAVITY = 18;
 
+export function fmtTime(sec: number) {
+  const m = Math.floor(sec / 60);
+  const r = sec - m * 60;
+  return `${m}:${r.toFixed(2).padStart(5, "0")}`;
+}
+
 function slopePitch(x: number, z: number, h: number) {
   const fx = Math.sin(h) * 0.5;
   const fz = Math.cos(h) * 0.5;
@@ -37,14 +44,6 @@ function slopePitch(x: number, z: number, h: number) {
   return -Math.atan2(a - b, 1);
 }
 
-function onPavement(x: number, z: number) {
-  const d = Math.hypot(x, z);
-  if (Math.abs(d - TRACK_RADIUS) < TRACK_WIDTH / 2) return true;
-  if (d < PLAZA_RADIUS) return true;
-  if (Math.hypot(x - SKATE.x, z - SKATE.z) < SKATE.r) return true;
-  if ((Math.abs(x) < 2 || Math.abs(z) < 2) && d < TRACK_RADIUS) return true;
-  return false;
-}
 
 export function Player({
   profile,
@@ -68,11 +67,15 @@ export function Player({
   const pitchG = useRef<THREE.Group>(null);
   const light = useRef<THREE.DirectionalLight>(null);
   const { camera, scene } = useThree();
+  const map = getMap();
   const st = useRef({
-    x: SPAWN.x + (Math.random() - 0.5) * 4,
-    y: 0,
-    z: SPAWN.z + (Math.random() - 0.5) * 3,
-    h: SPAWN.heading,
+    x: map.spawn.x + (Math.random() - 0.5) * 4,
+    y: groundHeight(map.spawn.x, map.spawn.z),
+    z: map.spawn.z + (Math.random() - 0.5) * 3,
+    h: map.spawn.heading,
+    vx: 0,
+    vz: 0,
+    liftAt: -10,
     speed: 0,
     vy: 0,
     grounded: true,
@@ -83,7 +86,7 @@ export function Player({
     stunUntil: 0,
     airStart: 0,
     combo: [] as TrickId[],
-    hoopAt: HOOPS.map(() => -10),
+    hoopAt: map.hoops.map(() => -10),
   });
   const lookAt = useRef(new THREE.Vector3());
   const tmp = useRef(new THREE.Vector3()).current;
@@ -92,12 +95,22 @@ export function Player({
     // 테스트용: ?debug 로 열면 window.__teleport(x, z, heading) 사용 가능
     if (typeof window !== "undefined" && window.location.search.includes("debug")) {
       (window as unknown as Record<string, unknown>).__teleport = (x: number, z: number, h = 0) => {
-        Object.assign(st.current, { x, z, h, y: groundHeight(x, z), speed: 0, vy: 0, grounded: true });
+        Object.assign(st.current, { x, z, h, y: groundHeight(x, z), speed: 0, vy: 0, vx: 0, vz: 0, grounded: true });
       };
     }
     if (light.current) scene.add(light.current.target);
     camera.position.set(st.current.x - 8, 4, st.current.z);
   }, [camera, scene]);
+
+  const finishRace = (t: number) => {
+    const sec = t - race.start;
+    race.last = sec;
+    const best = !race.best || sec < race.best;
+    if (best) race.best = sec;
+    raceResults.push(Math.round(sec * 1000));
+    popups.push({ text: `🏁 ${fmtTime(sec)}${best ? "  최고 기록!" : ""}`, kind: "trick" });
+    sfx("finish");
+  };
 
   useFrame((_, dtRaw) => {
     const dt = Math.min(dtRaw, 0.05);
@@ -108,26 +121,35 @@ export function Player({
 
     // ── 부스터 ──
     if (s.grounded) {
-      for (const b of BOOSTS) {
+      for (const b of map.boosts) {
         if (Math.hypot(b.x - s.x, b.z - s.z) < 2.2 && t > s.boostUntil - 1.2) {
           s.boostUntil = t + 1.6;
           s.speed = Math.max(s.speed, spec.maxSpeed * 1.4);
           popups.push({ text: "🚀 부스터!", kind: "bonus" });
+          sfx("boost");
         }
       }
     }
     const boosting = t < s.boostUntil;
 
     // ── 속도 ──
-    const paved = onPavement(s.x, s.z);
-    const wet = inPond(s.x, s.z) && s.y < 0.2;
+    const paved = map.paved(s.x, s.z);
+    const wet = map.water(s.x, s.z) && s.y < 0.2;
+    if (wet && !anim.wet) sfx("splash");
     anim.wet = wet;
+    const icy = map.ice(s.x, s.z) && s.grounded;
+    // 지형 경사 (진행 방향 기준, + 오르막)
+    const fsx = Math.sin(s.h) * 0.6;
+    const fsz = Math.cos(s.h) * 0.6;
+    const slope = s.grounded ? (map.base(s.x + fsx, s.z + fsz) - map.base(s.x - fsx, s.z - fsz)) / 1.2 : 0;
     let cap = spec.maxSpeed * (paved || spec.id === "mtb" ? 1 : 0.72);
     if (boosting) cap = spec.maxSpeed * 1.6;
+    cap *= 1 + Math.max(0, -slope) * 1.6; // 내리막에서는 더 빨리
     if (wet) cap = 2.5;
+    if (s.grounded && !stunned) s.speed -= 9 * slope * dt;
     if (!bowing && input.f) s.speed += spec.accel * dt * (boosting ? 2 : 1);
-    else if (!bowing && input.b) s.speed -= (s.speed > 0 ? spec.accel * 1.8 : spec.accel * 0.5) * dt;
-    else s.speed -= s.speed * (s.grounded ? 0.9 : 0.1) * dt;
+    else if (!bowing && input.b) s.speed -= (s.speed > 0 ? spec.accel * (icy ? 0.4 : 1.8) : spec.accel * 0.5) * dt;
+    else s.speed -= s.speed * (s.grounded ? (icy ? 0.15 : 0.9) : 0.1) * dt;
     if (bowing) s.speed *= Math.max(0, 1 - 5 * dt);
     if (s.speed > cap) s.speed += (cap - s.speed) * Math.min(1, 3 * dt);
     s.speed = Math.max(-spec.maxSpeed * 0.3, s.speed);
@@ -141,8 +163,14 @@ export function Player({
     // ── 이동 + 충돌 ──
     const px = s.x;
     const pz = s.z;
-    s.x += Math.sin(s.h) * s.speed * dt;
-    s.z += Math.cos(s.h) * s.speed * dt;
+    // 얼음 위에서는 속도 방향이 천천히 따라옴 (미끄러짐)
+    const wantVx = Math.sin(s.h) * s.speed;
+    const wantVz = Math.cos(s.h) * s.speed;
+    const grip = icy ? 1 - Math.exp(-0.8 * dt) : 1;
+    s.vx += (wantVx - s.vx) * grip;
+    s.vz += (wantVz - s.vz) * grip;
+    s.x += s.vx * dt;
+    s.z += s.vz * dt;
     const g0 = groundHeight(s.x, s.z);
     if (s.grounded && g0 - s.y > 0.45) {
       // 점프대 옆면에 부딪힘
@@ -162,7 +190,8 @@ export function Player({
         s.vy = spec.jump;
         s.grounded = false;
         s.airStart = t;
-      } else if (g < s.y - 0.08) {
+        sfx("jump", 0.7);
+      } else if (g < s.y - (0.08 + 0.9 * Math.abs(s.speed) * dt)) {
         s.grounded = false; // 점프대 끝에서 날아오름 (경사 속도 유지)
         if (s.vy > 0.5) s.vy += 2.5 + Math.abs(s.speed) * 0.25;
         s.airStart = t;
@@ -186,7 +215,9 @@ export function Player({
           else s.combo.push(anim.trick);
           anim.trick = null;
         }
+        if (!crashed && t - s.airStart > 0.35) sfx("land", 0.8);
         if (crashed) {
+          sfx("crash");
           s.combo = [];
           s.speed = 0;
           s.stunUntil = t + CRASH_DUR;
@@ -199,6 +230,7 @@ export function Player({
           const mult = s.combo.length * (TRICK_MULT[spec.id] ?? 1);
           const pts = Math.round((base + air * 100) * mult);
           stats.trickScore += pts;
+          sfx("trick");
           const names = s.combo.map((id) => TRICK_MAP[id].name).join(" + ");
           popups.push({
             text: `${names}${s.combo.length > 1 ? ` 콤보 x${s.combo.length}` : ""}  +${pts}`,
@@ -230,8 +262,8 @@ export function Player({
     }
 
     // ── 공중 링 통과 ──
-    for (let i = 0; i < HOOPS.length; i++) {
-      const h = HOOPS[i];
+    for (let i = 0; i < map.hoops.length; i++) {
+      const h = map.hoops[i];
       if (t - s.hoopAt[i] < 3) continue;
       if (Math.hypot(h.x - s.x, h.y - (s.y + 0.9), h.z - s.z) < h.r + 0.3) {
         s.hoopAt[i] = t;
@@ -239,6 +271,7 @@ export function Player({
         stats.stars += 3;
         stats.trickScore += 250;
         popups.push({ text: "💫 링 통과! ⭐+3 +250", kind: "bonus" });
+        sfx("ring");
       }
     }
     stats.airborne = !s.grounded;
@@ -261,12 +294,78 @@ export function Player({
 
     // ── 별 수집 ──
     for (const star of stars) {
-      if (Math.hypot(star.x - s.x, star.z - s.z) < 1.7 && s.y < 3) {
+      if (Math.hypot(star.x - s.x, star.z - s.z) < 1.7 && s.y - groundHeight(star.x, star.z) < 3) {
         stats.stars += 1;
+        sfx("star");
         const [nx, nz] = randomStarPos();
         star.x = nx;
         star.z = nz;
       }
+    }
+
+    // ── 리프트 ──
+    const lift = map.lift;
+    if (lift && s.grounded && t - s.liftAt > 3 && Math.hypot(lift.x - s.x, lift.z - s.z) < lift.r) {
+      s.liftAt = t;
+      s.x = lift.to.x;
+      s.z = lift.to.z;
+      s.h = lift.to.heading;
+      s.y = groundHeight(s.x, s.z);
+      s.speed = 0;
+      s.vx = 0;
+      s.vz = 0;
+      popups.push({ text: "🚡 정상 도착! 슬라럼 출발 게이트로 내려가요", kind: "bonus" });
+      sfx("lift");
+    }
+
+    // ── 타임어택 ──
+    const course = map.course;
+    const gate = course.gates[race.next];
+    if (gate && Math.hypot(gate.x - s.x, gate.z - s.z) < gate.w / 2 + 0.5) {
+      const n = course.gates.length;
+      if (race.next === 0) {
+        if (race.running && course.kind === "lap") {
+          finishRace(t);
+        }
+        race.running = true;
+        race.start = t;
+        race.next = 1;
+        race.total = n;
+        if (course.kind === "run" || !race.last) popups.push({ text: `⏱️ ${course.name} 시작!`, kind: "bonus" });
+        sfx("checkpoint");
+      } else if (race.running) {
+        race.next += 1;
+        if (race.next >= n) {
+          if (course.kind === "run") {
+            finishRace(t);
+            race.running = false;
+            race.next = 0;
+          } else {
+            race.next = 0; // 출발선으로 돌아가면 완주
+          }
+        } else {
+          sfx("checkpoint");
+        }
+      }
+    }
+    // 슬라럼: 게이트를 지나쳐 버리면 +2초 벌칙 후 다음 게이트로
+    const g2 = course.gates[race.next];
+    if (course.kind === "run" && race.running && g2 && race.next > 0) {
+      const ahead = (s.x - g2.x) * Math.sin(g2.heading) + (s.z - g2.z) * Math.cos(g2.heading);
+      if (ahead > 2) {
+        race.start -= 2;
+        race.next += 1;
+        popups.push({ text: "🚩 게이트 놓침! +2초", kind: "crash" });
+        if (race.next >= course.gates.length) {
+          finishRace(t);
+          race.running = false;
+          race.next = 0;
+        }
+      }
+    }
+    if (race.running && t - race.start > 600) {
+      race.running = false;
+      race.next = 0;
     }
 
     stats.speed = Math.abs(s.speed);
@@ -338,7 +437,8 @@ export function Player({
     <>
       <directionalLight
         ref={light}
-        intensity={2.2}
+        intensity={map.sky.sun}
+        color={map.sky.sunColor}
         castShadow
         shadow-mapSize={lowPower ? [1024, 1024] : [2048, 2048]}
         shadow-camera-left={-30}

@@ -291,3 +291,24 @@ kbd {
   .item-icon { font-size: 26px; }
   .item-name { font-size: 13px; }
 }
+
+/* 타임어택 */
+.racebar {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; align-items: baseline;
+  background: rgba(43, 45, 66, 0.82); color: #fff; padding: 6px 16px; border-radius: 99px; font-size: 13px; white-space: nowrap; pointer-events: none;
+}
+.racebar b { font-family: "Jua", sans-serif; font-weight: 400; font-size: 24px; letter-spacing: 0.5px; }
+.racebar.on b { color: #ffd166; }
+.racebar .muted { color: #ced4da; }
+.racebar .best { color: #80ffdb; }
+@media (pointer: coarse), (max-width: 760px) {
+  .racebar { top: calc(70px + env(safe-area-inset-top)); left: auto; right: calc(8px + env(safe-area-inset-right)); transform: none; font-size: 11px; padding: 4px 12px; gap: 6px; }
+  .racebar b { font-size: 18px; }
+  .racebar > span:first-child { display: none; }
+}
+
+.maps { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mapcard { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-radius: 14px; border: 2px solid var(--line); background: #fff; text-align: left; }
+.mapcard .emoji { font-size: 24px; }
+.mapcard small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.mapcard.on { border-color: var(--accent); background: #fff1eb; }

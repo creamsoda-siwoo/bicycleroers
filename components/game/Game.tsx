@@ -9,7 +9,11 @@ import { supabase } from "@/lib/supabase";
 import { ensurePlayer, saveProgress, saveProgressOnExit, type ProgressDelta } from "@/lib/player";
 import { World } from "../three/World";
 import { newAnim, now } from "../three/anim";
-import { Player, RemoteRider, popups, stats, view } from "./Scene";
+import { Player, RemoteRider, fmtTime, popups, stats, view } from "./Scene";
+import { race, raceResults, resetRace } from "./state";
+import { getMap, setMap } from "@/lib/maps";
+import { isMuted, setMuted, sfx, unlockAudio } from "@/lib/sound";
+import type { Remote } from "./net";
 import { bindKeyboard, input, queueTrick } from "./input";
 import { useNet } from "./net";
 
@@ -30,6 +34,8 @@ export default function Game() {
   useEffect(() => {
     if (!profile || ready) return;
     // 서버에 저장된 꾸미기·별 불러오기 (실패해도 게임은 진행)
+    setMap(profile.map ?? "village");
+    resetRace();
     ensurePlayer(profile.nickname)
       .then((pl) => {
         setProfile((p) => (p ? { ...p, equip: pl.equipped } : p));
@@ -47,10 +53,39 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
   const router = useRouter();
   const myId = useMemo(() => crypto.randomUUID(), []);
   const anim = useMemo(() => newAnim(), []);
-  const net = useNet(profile, myId);
+  const remotesRef = useRef<Map<string, Remote> | null>(null);
+  const net = useNet(profile, myId, (id) => {
+    const r = remotesRef.current?.get(id);
+    const d = r ? Math.hypot(r.cur.x - stats.x, r.cur.z - stats.z) : 0;
+    sfx("bell", 1 - d / 60);
+  });
+  remotesRef.current = net.remotes.current;
+  const map = getMap();
+  const [muted, setMutedState] = useState(isMuted());
+  const { sendBell } = net;
+  const lastBell = useRef(0);
+  const ringBell = useCallback(() => {
+    if (Date.now() - lastBell.current < 1200) return;
+    lastBell.current = Date.now();
+    sfx("bell");
+    sendBell();
+  }, [sendBell]);
+
+  useEffect(() => {
+    const unlock = () => unlockAudio();
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
   const spec = getBike(profile.bike);
 
-  const [hud, setHud] = useState({ speed: 0, dist: 0, stars: 0, trick: 0, air: false, boost: false });
+  const [hud, setHud] = useState({
+    speed: 0, dist: 0, stars: 0, trick: 0, air: false, boost: false,
+    raceOn: false, raceT: 0, raceNext: 0, raceTotal: 0, raceBest: 0,
+  });
   const [toasts, setToasts] = useState<{ id: number; text: string; kind: string }[]>([]);
   const toastId = useRef(0);
   const [, setTick] = useState(0);
@@ -145,6 +180,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
       else if (code === "KeyH") doEmote("wave");
       else if (code === "KeyC") doEmote("cheer");
       else if (code === "KeyV") cycleView();
+      else if (code === "KeyT") ringBell();
       else if (code === "Enter") {
         setChatOpen(true);
         setTimeout(() => chatInput.current?.focus(), 0);
@@ -153,7 +189,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         if (tr) queueTrick(tr.id);
       }
     });
-  }, [doEmote, cycleView]);
+  }, [doEmote, cycleView, ringBell]);
 
   useEffect(() => {
     let n = 0;
@@ -165,11 +201,17 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
           setTimeout(() => setToasts((old) => old.filter((x) => x.id !== f.id)), f.kind === "trick" ? 2200 : 1500);
         }
       }
+      if (raceResults.length) {
+        const rows = raceResults.splice(0).map((ms) => ({ map: getMap().id, nickname: profile.nickname, bike: profile.bike, ms }));
+        void supabase.from("bike_times").insert(rows);
+      }
+      setHud({
+        speed: stats.speed, dist: stats.dist, stars: stats.stars, trick: stats.trickScore,
+        air: stats.airborne, boost: stats.boosting,
+        raceOn: race.running, raceT: race.running ? performance.now() / 1000 - race.start : race.last,
+        raceNext: race.next, raceTotal: race.total, raceBest: race.best,
+      });
       if (++n % 2 === 0) {
-        setHud({
-          speed: stats.speed, dist: stats.dist, stars: stats.stars, trick: stats.trickScore,
-          air: stats.airborne, boost: stats.boosting,
-        });
         setTick((t) => t + 1);
       }
     }, 100);
@@ -246,9 +288,9 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         camera={{ fov: 60, near: 0.1, far: 600, position: [0, 5, -70] }}
         gl={{ antialias: true }}
       >
-        <color attach="background" args={["#bde0fe"]} />
-        <fog attach="fog" args={["#bde0fe", 90, 260]} />
-        <hemisphereLight args={["#ffffff", "#7fb069", 1.1]} />
+        <color attach="background" args={[map.sky.bg]} />
+        <fog attach="fog" args={[map.sky.bg, map.sky.fog[0], map.sky.fog[1]]} />
+        <hemisphereLight args={map.sky.hemi} />
         <ambientLight intensity={0.35} />
         <World />
         <Player profile={profile} anim={anim} myId={myId} lowPower={isTouch} bubble={bubbleOf(myId)} sendMove={net.sendMove} sendTrick={net.sendTrick} />
@@ -290,6 +332,16 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
             {net.players.length > 8 && <li className="muted">외 {net.players.length - 8}명</li>}
           </ul>
           <div className="row">
+            <button
+              className="btn small ghost"
+              aria-label={muted ? "소리 켜기" : "소리 끄기"}
+              onClick={() => {
+                setMuted(!muted);
+                setMutedState(!muted);
+              }}
+            >
+              {muted ? "🔇" : "🔊"}
+            </button>
             <button className="btn small ghost" onClick={cycleView}>
               📷<span className="lbl"> {viewMode === "chase" ? "뒤에서" : viewMode === "front" ? "앞에서" : "위에서"}</span>
             </button>
@@ -299,6 +351,22 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
           </div>
         </div>
       </div>
+
+      {/* 타임어택 */}
+      {(hud.raceOn || hud.raceBest > 0) && (
+        <div className={hud.raceOn ? "racebar on" : "racebar"}>
+          <span>⏱️ {map.course.name}</span>
+          <b>{fmtTime(hud.raceT)}</b>
+          {hud.raceOn && (
+            <span className="muted">
+              {map.course.kind === "lap"
+                ? `체크포인트 ${hud.raceNext === 0 ? hud.raceTotal : hud.raceNext}/${hud.raceTotal}`
+                : `게이트 ${hud.raceNext}/${hud.raceTotal}`}
+            </span>
+          )}
+          {hud.raceBest > 0 && <span className="best">최고 {fmtTime(hud.raceBest)}</span>}
+        </div>
+      )}
 
       {/* 묘기 알림 */}
       <div className="toasts">
@@ -328,6 +396,10 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
 
       {/* 감정표현 */}
       <div className="emotes">
+        <button className="btn emote bell" onClick={ringBell} aria-label="따릉따릉">
+          <span className="e-ico">🔔</span>
+          <span className="e-txt">따릉</span> <kbd>T</kbd>
+        </button>
         {EMOTES.map((e) => (
           <button key={e.id} className="btn emote" onClick={() => doEmote(e.id)} aria-label={e.label}>
             <span className="e-ico">{e.label.split(" ")[0]}</span>
@@ -389,7 +461,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         </div>
       </div>
 
-      <div className="help">W/↑ 페달 · S/↓ 브레이크 · A D/← → 방향 · Space 점프 · 공중에서 Q 백플립 · F 프론트플립 · E 스핀 · G 슈퍼맨 · R 노핸드 · B 절 · H 인사 · C 만세 · V 카메라 · Enter 채팅</div>
+      <div className="help">W/↑ 페달 · S/↓ 브레이크 · A D/← → 방향 · Space 점프 · T 따릉 · 공중에서 Q 백플립 · F 프론트플립 · E 스핀 · G 슈퍼맨 · R 노핸드 · B 절 · H 인사 · C 만세 · V 카메라 · Enter 채팅</div>
     </div>
   );
 }

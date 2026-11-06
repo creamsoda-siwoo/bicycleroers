@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { Landmarks } from "./Landmarks";
 import {
   HOUSES, PLAZA_RADIUS, RAMPS, STAR_COUNT, TRACK_RADIUS, TRACK_WIDTH, TREES,
-  WORLD_SIZE, randomStarPos,
+  WORLD_SIZE,
 } from "@/lib/world";
+import { getMap, groundHeight, randomStarPos } from "@/lib/maps";
+import { SnowWorld } from "./SnowWorld";
+import { CourseGates, Hoops } from "./Common";
 
 function RampMesh({ length, width, height, color }: { length: number; width: number; height: number; color: string }) {
   const geo = useMemo(() => {
@@ -241,10 +244,15 @@ function Fence() {
 }
 
 /** 별 수집: 위치는 공유 객체(stars)에 있고, 플레이어가 먹으면 재배치 */
-export const stars: { x: number; z: number }[] = Array.from({ length: STAR_COUNT }, () => {
-  const [x, z] = randomStarPos();
-  return { x, z };
-});
+export const stars: { x: number; z: number }[] = [];
+
+function resetStars() {
+  stars.length = 0;
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const [x, z] = randomStarPos();
+    stars.push({ x, z });
+  }
+}
 
 function Stars() {
   const refs = useRef<(THREE.Group | null)[]>([]);
@@ -268,7 +276,7 @@ function Stars() {
     refs.current.forEach((g, i) => {
       if (!g) return;
       const s = stars[i];
-      g.position.set(s.x, 1.3 + Math.sin(t * 2 + i) * 0.2, s.z);
+      g.position.set(s.x, groundHeight(s.x, s.z) + 1.3 + Math.sin(t * 2 + i) * 0.2, s.z);
       g.rotation.y = t * 2 + i;
     });
   });
@@ -286,6 +294,21 @@ function Stars() {
 }
 
 export function World() {
+  const [map] = useState(() => {
+    resetStars();
+    return getMap();
+  });
+  return (
+    <group>
+      <Stars />
+      <Hoops />
+      <CourseGates />
+      {map.id === "snow" ? <SnowWorld /> : <VillageWorld />}
+    </group>
+  );
+}
+
+function VillageWorld() {
   return (
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
@@ -303,7 +326,6 @@ export function World() {
       <Landmarks />
       <Houses />
       <Fence />
-      <Stars />
       <Clouds />
       <Mountains />
     </group>

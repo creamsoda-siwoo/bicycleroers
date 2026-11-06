@@ -11,6 +11,8 @@ export interface Profile {
   bike: BikeId;
   /** 장착한 꾸미기 아이템 */
   equip?: Equipped;
+  /** 선택한 맵 */
+  map?: "village" | "snow";
 }
 
 export const COLORS = [

@@ -4,40 +4,10 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import {
-  BOOSTS, BRIDGE, FERRIS, HOOPS, LAMPS, PLATFORMS, POND, SKATE, SPAWN, TRACK_RADIUS, TRACK_WIDTH, WINDMILLS,
+  BOOSTS, BRIDGE, FERRIS, LAMPS, PLATFORMS, POND, SKATE, SPAWN, TRACK_RADIUS, TRACK_WIDTH, WINDMILLS,
 } from "@/lib/world";
 
 const RAINBOW = ["#ff595e", "#ff924c", "#ffca3a", "#8ac926", "#1982c4", "#4267ac", "#6a4c93"];
-
-/** 공중 링 — 통과 시 반짝 (hoopFlash 에 시간 기록) */
-export const hoopFlash: number[] = HOOPS.map(() => -10);
-
-function Hoops() {
-  const refs = useRef<(THREE.Mesh | null)[]>([]);
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime();
-    const now = performance.now() / 1000;
-    refs.current.forEach((m, i) => {
-      if (!m) return;
-      const mat = m.material as THREE.MeshStandardMaterial;
-      const f = Math.max(0, 1 - (now - hoopFlash[i]) / 0.8);
-      mat.emissiveIntensity = 0.5 + Math.sin(t * 3 + i) * 0.2 + f * 2.5;
-      m.scale.setScalar(1 + f * 0.3);
-    });
-  });
-  return (
-    <>
-      {HOOPS.map((h, i) => (
-        <group key={i} position={[h.x, h.y, h.z]} rotation={[0, h.face, 0]}>
-          <mesh ref={(el) => { refs.current[i] = el; }}>
-            <torusGeometry args={[h.r, 0.16, 12, 40]} />
-            <meshStandardMaterial color="#ffd60a" emissive="#ff9e00" emissiveIntensity={0.6} metalness={0.5} roughness={0.3} />
-          </mesh>
-        </group>
-      ))}
-    </>
-  );
-}
 
 function Boosts() {
   const refs = useRef<(THREE.Group | null)[]>([]);
@@ -430,7 +400,6 @@ export function Landmarks() {
       <SkatePark />
       <Platforms />
       <PondAndBridge />
-      <Hoops />
       <Boosts />
       <StartLine />
       <FerrisWheel />

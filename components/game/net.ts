@@ -35,7 +35,9 @@ export interface Bubble {
 
 const CHANNEL = "bicycleroers-world";
 
-export function useNet(profile: Profile, myId: string) {
+export function useNet(profile: Profile, myId: string, onBell?: (id: string) => void) {
+  const bellRef = useRef(onBell);
+  bellRef.current = onBell;
   const remotes = useRef(new Map<string, Remote>());
   const [players, setPlayers] = useState<NetPlayer[]>([]);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -64,7 +66,8 @@ export function useNet(profile: Profile, myId: string) {
   }, []);
 
   useEffect(() => {
-    const ch = supabase.channel(CHANNEL, {
+    const topic = profile.map && profile.map !== "village" ? `${CHANNEL}-${profile.map}` : CHANNEL;
+    const ch = supabase.channel(topic, {
       config: { presence: { key: myId }, broadcast: { self: false, ack: false } },
     });
     chRef.current = ch;
@@ -115,6 +118,12 @@ export function useNet(profile: Profile, myId: string) {
         r.anim.trick = p.trick;
         r.anim.trickAt = now();
       }
+    });
+
+    ch.on("broadcast", { event: "bell" }, ({ payload }) => {
+      const p = payload as { id: string };
+      showBubble(p.id, "🔔 따릉따릉!");
+      bellRef.current?.(p.id);
     });
 
     ch.on("broadcast", { event: "bubble" }, ({ payload }) => {
@@ -178,6 +187,12 @@ export function useNet(profile: Profile, myId: string) {
     chRef.current.send({ type: "broadcast", event: "trick", payload: { id: myId, trick } });
   }, [myId]);
 
+  const sendBell = useCallback(() => {
+    showBubble(myId, "🔔 따릉따릉!");
+    if (!ready.current || !chRef.current) return;
+    chRef.current.send({ type: "broadcast", event: "bell", payload: { id: myId } });
+  }, [myId, showBubble]);
+
   const sendChat = useCallback(async (text: string) => {
     const message = text.trim().slice(0, 200);
     if (!message) return;
@@ -193,5 +208,5 @@ export function useNet(profile: Profile, myId: string) {
     });
   }, [myId, profile, showBubble]);
 
-  return { remotes, players, messages, bubbles, connected, sendMove, sendEmote, sendTrick, sendChat };
+  return { remotes, players, messages, bubbles, connected, sendMove, sendEmote, sendTrick, sendBell, sendChat };
 }

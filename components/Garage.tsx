@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ITEMS, SLOTS, type Slot } from "@/lib/shop";
 import { buyItem, equipItem, exportCode, importCode, type PlayerData } from "@/lib/player";
+import { sfx, unlockAudio } from "@/lib/sound";
 
 function fmtDist(m: number) {
   return m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`;
@@ -35,9 +36,11 @@ export default function Garage({
   const act = async (id: string, fn: () => Promise<PlayerData>, ok: string) => {
     setBusy(id);
     setMsg("");
+    unlockAudio();
     try {
       onChange(await fn());
       setMsg(ok);
+      sfx("buy");
     } catch (e) {
       setMsg(`😢 ${(e as Error).message}`);
     } finally {
