@@ -37,7 +37,13 @@ function GameInner({ profile }: { profile: Profile }) {
 
   const [hud, setHud] = useState({ speed: 0, dist: 0, stars: 0 });
   const [, setTick] = useState(0);
-  const [chatOpen, setChatOpen] = useState(true);
+  const isTouch = useMemo(
+    () => typeof window !== "undefined" && (window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 760),
+    [],
+  );
+  const [chatOpen, setChatOpen] = useState(!isTouch);
+  const [unread, setUnread] = useState(0);
+  const seenCount = useRef(0);
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
   const chatInput = useRef<HTMLInputElement>(null);
@@ -90,7 +96,24 @@ function GameInner({ profile }: { profile: Profile }) {
 
   useEffect(() => {
     chatList.current?.scrollTo({ top: chatList.current.scrollHeight });
+    if (chatOpen) {
+      seenCount.current = net.messages.length;
+      setUnread(0);
+    } else {
+      setUnread(Math.max(0, net.messages.length - seenCount.current));
+    }
   }, [net.messages, chatOpen]);
+
+  // 모바일: 길게 누르기 메뉴/더블탭 확대 방지
+  useEffect(() => {
+    const stop = (e: Event) => e.preventDefault();
+    window.addEventListener("contextmenu", stop);
+    document.addEventListener("gesturestart", stop);
+    return () => {
+      window.removeEventListener("contextmenu", stop);
+      document.removeEventListener("gesturestart", stop);
+    };
+  }, []);
 
   const send = async () => {
     const t = text.trim();
@@ -135,7 +158,7 @@ function GameInner({ profile }: { profile: Profile }) {
     <div className="game">
       <Canvas
         shadows
-        dpr={[1, 2]}
+        dpr={isTouch ? [1, 1.5] : [1, 2]}
         camera={{ fov: 60, near: 0.1, far: 600, position: [0, 5, -70] }}
         gl={{ antialias: true }}
       >
@@ -144,7 +167,7 @@ function GameInner({ profile }: { profile: Profile }) {
         <hemisphereLight args={["#ffffff", "#7fb069", 1.1]} />
         <ambientLight intensity={0.35} />
         <World />
-        <Player profile={profile} anim={anim} myId={myId} bubble={bubbleOf(myId)} sendMove={net.sendMove} />
+        <Player profile={profile} anim={anim} myId={myId} lowPower={isTouch} bubble={bubbleOf(myId)} sendMove={net.sendMove} />
         {net.players.map((p) => (
           <RemoteRider key={p.id} player={p} remote={net.remotes.current.get(p.id)} bubble={bubbleOf(p.id)} />
         ))}
@@ -192,8 +215,9 @@ function GameInner({ profile }: { profile: Profile }) {
       {/* 감정표현 */}
       <div className="emotes">
         {EMOTES.map((e) => (
-          <button key={e.id} className="btn emote" onClick={() => doEmote(e.id)}>
-            {e.label} <kbd>{e.key}</kbd>
+          <button key={e.id} className="btn emote" onClick={() => doEmote(e.id)} aria-label={e.label}>
+            <span className="e-ico">{e.label.split(" ")[0]}</span>
+            <span className="e-txt">{e.label.split(" ")[1]}</span> <kbd>{e.key}</kbd>
           </button>
         ))}
       </div>
@@ -202,6 +226,7 @@ function GameInner({ profile }: { profile: Profile }) {
       <div className={chatOpen ? "chat panel" : "chat panel closed"}>
         <button className="chat-toggle" onClick={() => setChatOpen((o) => !o)}>
           💬 채팅 {chatOpen ? "▾" : "▴"}
+          {!chatOpen && unread > 0 && <span className="badge">{unread > 9 ? "9+" : unread}</span>}
         </button>
         {chatOpen && (
           <>
@@ -237,17 +262,17 @@ function GameInner({ profile }: { profile: Profile }) {
         )}
       </div>
 
-      {/* 모바일 컨트롤 */}
-      <div className="touch">
-        <div className="pad">
-          <button className="tbtn" {...hold("l")}>◀</button>
-          <div className="col">
-            <button className="tbtn" {...hold("f")}>▲</button>
-            <button className="tbtn" {...hold("b")}>▼</button>
-          </div>
-          <button className="tbtn" {...hold("r")}>▶</button>
+      {/* 모바일 컨트롤: 왼손 방향, 오른손 페달/브레이크/점프 */}
+      <div className="touch touch-left">
+        <button className="tbtn" aria-label="왼쪽" {...hold("l")}>◀</button>
+        <button className="tbtn" aria-label="오른쪽" {...hold("r")}>▶</button>
+      </div>
+      <div className="touch touch-right">
+        <button className="tbtn small" aria-label="브레이크" {...hold("b")}>▼</button>
+        <div className="col">
+          <button className="tbtn jump" aria-label="점프" {...hold("jump")}>점프</button>
+          <button className="tbtn pedal" aria-label="페달" {...hold("f")}>▲ 페달</button>
         </div>
-        <button className="tbtn jump" {...hold("jump")}>점프</button>
       </div>
 
       <div className="help">W/↑ 페달 · S/↓ 브레이크 · A D/← → 방향 · Space 점프 · B 절 · H 인사 · C 만세 · V 카메라 · Enter 채팅</div>

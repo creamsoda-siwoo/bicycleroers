@@ -41,10 +41,12 @@ export function Player({
   myId,
   bubble,
   sendMove,
+  lowPower,
 }: {
   profile: Profile;
   anim: AnimState;
   myId: string;
+  lowPower?: boolean;
   bubble: string | null;
   sendMove: (p: MovePayload) => void;
 }) {
@@ -225,7 +227,7 @@ export function Player({
         ref={light}
         intensity={2.2}
         castShadow
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={lowPower ? [1024, 1024] : [2048, 2048]}
         shadow-camera-left={-30}
         shadow-camera-right={30}
         shadow-camera-top={30}

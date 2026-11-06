@@ -136,26 +136,73 @@ kbd {
 
 .help { position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #1d3557; background: rgba(255,255,255,0.55); padding: 4px 10px; border-radius: 99px; white-space: nowrap; pointer-events: none; }
 
+.badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 99px; background: #e63946; color: #fff; font-size: 11px; text-align: center; line-height: 18px; }
+.e-txt { margin-left: 4px; }
+
 .touch { display: none; }
-@media (pointer: coarse), (max-width: 760px) {
-  .touch { display: flex; position: absolute; right: 12px; bottom: 70px; gap: 10px; align-items: flex-end; }
-  .help { display: none; }
-  .chat { width: calc(100vw - 24px); bottom: auto; top: 150px; }
-  .chat-list { height: 90px; }
-  .emotes { bottom: 12px; }
-  .btn.emote kbd { display: none; }
-  .online ul { display: none; }
-  .stat-grid { gap: 10px; }
-  .stat-grid .big { font-size: 22px; }
-}
-.pad { display: flex; align-items: center; gap: 6px; }
-.pad .col { display: flex; flex-direction: column; gap: 6px; }
 .tbtn {
-  width: 58px; height: 58px; border-radius: 50%; border: none; font-size: 20px;
-  background: rgba(255, 255, 255, 0.85); box-shadow: 0 3px 0 rgba(0,0,0,0.12); touch-action: none;
+  width: 64px; height: 64px; border-radius: 50%; border: none; font-size: 22px; color: var(--ink);
+  background: rgba(255, 255, 255, 0.85); box-shadow: 0 3px 0 rgba(0,0,0,0.15);
+  touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
 }
-.tbtn:active { background: #ffd6c2; }
-.tbtn.jump { width: 72px; height: 72px; background: var(--accent); color: #fff; font-weight: 700; font-size: 15px; }
+.tbtn:active { background: #ffd6c2; transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,0.15); }
+.tbtn.small { width: 54px; height: 54px; font-size: 18px; }
+.tbtn.jump { width: 64px; height: 64px; background: #ffd166; font-weight: 700; font-size: 15px; }
+.tbtn.pedal { width: 84px; height: 84px; background: var(--accent); color: #fff; font-weight: 700; font-size: 16px; }
+.touch .col { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+/* ── 모바일 / 터치 화면 ── */
+@media (pointer: coarse), (max-width: 760px) {
+  .game { height: 100dvh; }
+  .touch { display: flex; position: absolute; gap: 12px; align-items: flex-end; z-index: 5; }
+  .touch-left { left: calc(14px + env(safe-area-inset-left)); bottom: calc(18px + env(safe-area-inset-bottom)); }
+  .touch-right { right: calc(14px + env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom)); }
+  .help { display: none; }
+
+  .hud-top { top: calc(8px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left)); right: calc(8px + env(safe-area-inset-right)); gap: 8px; }
+  .panel { padding: 7px 10px; border-radius: 12px; }
+  .stat .me-line { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46vw; }
+  .stat .me-line .muted { display: none; }
+  .stat-grid { gap: 10px; }
+  .stat-grid .big { font-size: 20px; }
+  .stat-grid small { font-size: 11px; }
+  .online { min-width: 0; font-size: 12px; }
+  .online ul { display: none; }
+  .online .row { flex-wrap: nowrap; gap: 6px; }
+  .btn.small { padding: 5px 9px; font-size: 12px; }
+
+  /* 감정표현: 화면 오른쪽 가운데 아이콘 버튼 */
+  .emotes {
+    left: auto; right: calc(10px + env(safe-area-inset-right)); top: 50%; bottom: auto;
+    transform: translateY(-50%); flex-direction: column; gap: 8px;
+  }
+  .btn.emote { width: 46px; height: 46px; padding: 0; border-radius: 50%; font-size: 22px; }
+  .btn.emote .e-txt, .btn.emote kbd { display: none; }
+
+  /* 채팅: HUD 아래 작은 패널, 기본은 접힘 */
+  .chat {
+    top: calc(84px + env(safe-area-inset-top)); bottom: auto;
+    left: calc(8px + env(safe-area-inset-left));
+    width: min(78vw, 380px); padding: 7px 10px;
+  }
+  .chat.closed { width: auto; }
+  .chat-list { height: 76px; font-size: 12px; }
+  .chat-form input { font-size: 16px; padding: 6px 8px; } /* iOS 확대 방지 */
+}
+@media (pointer: coarse) and (max-height: 480px), (max-width: 760px) and (max-height: 480px) {
+  /* 가로 모드 휴대폰 */
+  .chat { top: calc(98px + env(safe-area-inset-top)); width: min(42vw, 360px); }
+  .chat-list { height: 56px; }
+  .emotes {
+    top: auto; right: auto; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom));
+    transform: translateX(-50%); flex-direction: row;
+  }
+  .btn.emote { width: 44px; height: 44px; font-size: 20px; }
+  .tbtn { width: 56px; height: 56px; }
+  .tbtn.pedal { width: 72px; height: 72px; }
+  .tbtn.jump { width: 54px; height: 54px; }
+  .touch .col { gap: 6px; }
+}
 
 /* 이름표 / 말풍선 (3D 위에 표시) */
 .tag-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; transform: translateY(-50%); }
