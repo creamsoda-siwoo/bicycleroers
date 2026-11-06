@@ -1,4 +1,5 @@
 import type { BikeId } from "./bikes";
+import type { Equipped } from "./shop";
 
 export type HatId = "helmet" | "cap" | "bunny" | "beanie" | "crown" | "none";
 export type EmoteId = "bow" | "wave" | "cheer";
@@ -8,6 +9,8 @@ export interface Profile {
   color: string;
   hat: HatId;
   bike: BikeId;
+  /** 장착한 꾸미기 아이템 */
+  equip?: Equipped;
 }
 
 export const COLORS = [

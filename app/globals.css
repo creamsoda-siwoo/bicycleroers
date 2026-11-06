@@ -256,3 +256,38 @@ kbd {
 .label3d { position: absolute; top: 0; left: 0; pointer-events: none; transform-origin: 50% 100%; will-change: transform; }
 .label3d .tag-wrap { transform: none; transform-origin: 50% 100%; }
 .tabs { margin-bottom: 10px; }
+.wallet { font-size: 13px; margin-bottom: 6px; }
+.wallet b { color: #e09f3e; font-size: 15px; }
+
+/* ── 차고 ── */
+.garage { margin-top: 16px; }
+.garage-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.wallet-big { font-family: "Jua", sans-serif; font-size: 28px; color: #e09f3e; }
+.records { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 6px 0 14px; }
+.records > div { background: #fff8ef; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; }
+.records small { color: var(--muted); font-size: 12px; }
+.records b { font-family: "Jua", sans-serif; font-weight: 400; font-size: 20px; }
+@media (max-width: 900px) { .records { grid-template-columns: repeat(3, 1fr); } }
+.items { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.item { border: 2px solid var(--line); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; background: #fff; }
+.item.owned { border-color: #b7e4c7; }
+.item.on { border-color: var(--accent); background: #fff1eb; }
+.item-icon { font-size: 30px; }
+.item-name { font-size: 14px; font-weight: 700; }
+.item .btn { width: 100%; }
+.btn.buy { background: #ffb703; box-shadow: 0 3px 0 #d98e04; }
+.btn.buy:disabled { background: #e9ecef; color: #adb5bd; box-shadow: none; }
+.garage-msg { margin-top: 10px; font-weight: 700; }
+.small-note { font-size: 13px; margin: 10px 0 6px; }
+.transfer { margin-top: 8px; font-size: 14px; }
+.transfer summary { cursor: pointer; font-weight: 700; }
+.transfer .row { margin-top: 6px; flex-wrap: nowrap; }
+.transfer input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); font-size: 14px; }
+.preview-card { position: relative; }
+.preview-wallet { position: absolute; top: 28px; right: 28px; background: rgba(255,255,255,0.9); padding: 4px 12px; border-radius: 99px; font-weight: 700; color: #e09f3e; }
+@media (max-width: 520px) {
+  .items { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .item { padding: 8px 6px; }
+  .item-icon { font-size: 26px; }
+  .item-name { font-size: 13px; }
+}

@@ -32,3 +32,6 @@ alter publication supabase_realtime add table public.bike_chat;
 -- 묘기 점수 (2번째 마이그레이션)
 alter table public.bike_rides add column if not exists trick_score integer not null default 0 check (trick_score between 0 and 10000000);
 create index if not exists bike_rides_trick_idx on public.bike_rides (trick_score desc);
+
+-- 3번째: 플레이어 저장·상점 (bike_players, bike_items, RPC 함수)
+-- 실제 적용본은 Supabase 마이그레이션 bike_players_and_shop, bike_progress_rate_limit 참고

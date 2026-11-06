@@ -6,6 +6,7 @@ import * as THREE from "three";
 import type { BikeSpec } from "@/lib/bikes";
 import { EMOTE_DUR, TRICK_MAP, type HatId, type Profile } from "@/lib/profile";
 import { placeLimb } from "./Tube";
+import { Wings } from "./Custom";
 import { crankAngle, crankLength } from "./Bike";
 import { CRASH_DUR, now, type AnimState } from "./anim";
 
@@ -340,6 +341,7 @@ export function Character({ spec, profile, anim }: { spec: BikeSpec; profile: Pr
           <sphereGeometry args={[0.17, 16, 12]} />
           <meshStandardMaterial color={PANTS} />
         </mesh>
+        {profile.equip?.acc === "acc_wings" && <Wings anim={anim} />}
         <group ref={head} position={[0, 0.66, 0.02]}>
           <Head profile={profile} />
         </group>

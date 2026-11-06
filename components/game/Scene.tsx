@@ -10,6 +10,7 @@ import {
 } from "@/lib/world";
 import { hoopFlash } from "../three/Landmarks";
 import { Rider } from "../three/Rider";
+import { Trail } from "../three/Custom";
 import { stars } from "../three/World";
 import { CRASH_DUR, now, type AnimState } from "../three/anim";
 import { input, trickQueue } from "./input";
@@ -353,6 +354,7 @@ export function Player({
           <Rider profile={profile} anim={anim} me bubble={bubble} />
         </group>
       </group>
+      {profile.equip?.trail && <Trail kind={profile.equip.trail} source={outer} anim={anim} />}
     </>
   );
 }
@@ -391,11 +393,14 @@ export function RemoteRider({ player, remote, bubble }: { player: NetPlayer; rem
 
   if (!remote) return null;
   return (
-    <group ref={outer} visible={false}>
-      <group ref={pitchG}>
-        <Rider profile={player} anim={remote.anim} label bubble={bubble} />
+    <>
+      <group ref={outer} visible={false}>
+        <group ref={pitchG}>
+          <Rider profile={player} anim={remote.anim} label bubble={bubble} />
+        </group>
       </group>
-    </group>
+      {player.equip?.trail && <Trail kind={player.equip.trail} source={outer} anim={remote.anim} />}
+    </>
   );
 }
 

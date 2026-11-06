@@ -64,7 +64,7 @@ export function Rider({
       <group ref={trickRef} position={[0, 0.85, 0]}>
         <group position={[0, -0.85, 0]}>
           <group ref={leanRef}>
-            <Bike spec={spec} anim={anim} />
+            <Bike spec={spec} anim={anim} equip={profile.equip} />
             <Character spec={spec} profile={profile} anim={anim} />
           </group>
         </group>

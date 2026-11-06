@@ -6,6 +6,7 @@ import { Canvas } from "@react-three/fiber";
 import { getBike } from "@/lib/bikes";
 import { EMOTES, TRICKS, loadProfile, type EmoteId, type Profile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
+import { ensurePlayer, saveProgress, saveProgressOnExit, type ProgressDelta } from "@/lib/player";
 import { World } from "../three/World";
 import { newAnim, now } from "../three/anim";
 import { Player, RemoteRider, popups, stats, view } from "./Scene";
@@ -24,11 +25,25 @@ export default function Game() {
     else setProfile(p);
   }, [router]);
 
-  if (!profile) return <div className="loading">자전거 준비 중… 🚲</div>;
-  return <GameInner profile={profile} />;
+  const [wallet, setWallet] = useState<number | null>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (!profile || ready) return;
+    // 서버에 저장된 꾸미기·별 불러오기 (실패해도 게임은 진행)
+    ensurePlayer(profile.nickname)
+      .then((pl) => {
+        setProfile((p) => (p ? { ...p, equip: pl.equipped } : p));
+        setWallet(pl.stars);
+      })
+      .catch(() => setWallet(null))
+      .finally(() => setReady(true));
+  }, [profile, ready]);
+
+  if (!profile || !ready) return <div className="loading">자전거 준비 중… 🚲</div>;
+  return <GameInner profile={profile} wallet={wallet} />;
 }
 
-function GameInner({ profile }: { profile: Profile }) {
+function GameInner({ profile, wallet }: { profile: Profile; wallet: number | null }) {
   const router = useRouter();
   const myId = useMemo(() => crypto.randomUUID(), []);
   const anim = useMemo(() => newAnim(), []);
@@ -52,6 +67,53 @@ function GameInner({ profile }: { profile: Profile }) {
   const chatList = useRef<HTMLDivElement>(null);
   const lastChat = useRef(0);
   const [viewMode, setViewMode] = useState(view.mode);
+  const [walletBase, setWalletBase] = useState(wallet);
+  // 마지막으로 서버에 저장한 시점의 누적값
+  const saved = useRef({ dist: 0, stars: 0, trick: 0 });
+  const saving_ = useRef(false);
+
+  const delta = useCallback(
+    (finished: boolean): ProgressDelta => ({
+      nickname: profile.nickname,
+      distance: stats.dist - saved.current.dist,
+      stars: stats.stars - saved.current.stars,
+      trick: stats.trickScore - saved.current.trick,
+      bestTrick: stats.trickScore,
+      bestDistance: stats.dist,
+      finished,
+    }),
+    [profile.nickname],
+  );
+
+  const autosave = useCallback(
+    async (finished: boolean) => {
+      if (saving_.current) return;
+      saving_.current = true;
+      const snap = { dist: stats.dist, stars: stats.stars, trick: stats.trickScore };
+      const res = await saveProgress(delta(finished));
+      if (res) {
+        saved.current = snap;
+        setWalletBase(res.stars);
+      }
+      saving_.current = false;
+    },
+    [delta],
+  );
+
+  useEffect(() => {
+    const id = setInterval(() => void autosave(false), 20000);
+    const onHide = () => {
+      if (stats.dist - saved.current.dist > 1 || stats.stars > saved.current.stars || stats.trickScore > saved.current.trick) {
+        saveProgressOnExit(delta(true));
+        saved.current = { dist: stats.dist, stars: stats.stars, trick: stats.trickScore };
+      }
+    };
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("pagehide", onHide);
+    };
+  }, [autosave, delta]);
 
   const { sendEmote } = net;
   const doEmote = useCallback(
@@ -147,6 +209,7 @@ function GameInner({ profile }: { profile: Profile }) {
   const exit = async () => {
     if (saving) return;
     setSaving(true);
+    await autosave(true);
     const distance = Math.round(stats.dist);
     if (distance >= 10 || stats.trickScore > 0) {
       await supabase.from("bike_rides").insert({
@@ -213,6 +276,9 @@ function GameInner({ profile }: { profile: Profile }) {
           <div className="online-title">
             <span className={net.connected ? "live on" : "live"} /> 접속 중 {net.players.length + 1}명
           </div>
+          {walletBase !== null && (
+            <div className="wallet">보유 ⭐ <b>{walletBase + hud.stars - saved.current.stars}</b></div>
+          )}
           <ul>
             <li><b>{profile.nickname}</b> (나)</li>
             {net.players.slice(0, 8).map((p) => (

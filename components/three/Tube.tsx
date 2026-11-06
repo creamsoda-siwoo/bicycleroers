@@ -14,12 +14,15 @@ export function Tube({
   r = 0.025,
   color,
   metalness = 0.3,
+  mat,
 }: {
   a: V3;
   b: V3;
   r?: number;
   color: string;
   metalness?: number;
+  /** 공유 재질 (도색 아이템) */
+  mat?: THREE.Material;
 }) {
   const { pos, quat, len } = useMemo(() => {
     const va = new THREE.Vector3(...a);
@@ -33,9 +36,9 @@ export function Tube({
   }, [a.join(","), b.join(",")]);
 
   return (
-    <mesh position={pos} quaternion={quat} castShadow>
+    <mesh position={pos} quaternion={quat} castShadow material={mat}>
       <cylinderGeometry args={[r, r, len, 10]} />
-      <meshStandardMaterial color={color} metalness={metalness} roughness={0.4} />
+      {!mat && <meshStandardMaterial color={color} metalness={metalness} roughness={0.4} />}
     </mesh>
   );
 }

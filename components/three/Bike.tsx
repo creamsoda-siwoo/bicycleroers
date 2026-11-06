@@ -7,6 +7,8 @@ import type { BikeSpec } from "@/lib/bikes";
 import { Tube } from "./Tube";
 import { Wheel } from "./Wheel";
 import type { AnimState } from "./anim";
+import { item, type Equipped } from "@/lib/shop";
+import { Balloon, Flag, HeadLight, Pet, useItemMaterial } from "./Custom";
 
 type V3 = [number, number, number];
 
@@ -172,7 +174,54 @@ function Bear({ p }: { p: V3 }) {
   );
 }
 
-export function Bike({ spec, anim }: { spec: BikeSpec; anim: AnimState }) {
+/** 액세서리·펫 위치 계산 후 그리기 */
+function Extras({ spec, equip, anim }: { spec: BikeSpec; equip?: Equipped; anim: AnimState }) {
+  const acc = equip?.acc;
+  const pet = equip?.pet;
+  if (!acc && !pet) return null;
+  const r = spec.wheel;
+  const seat: V3 = [0, spec.seat[0], spec.seat[1]];
+  const bar: V3 | null = spec.bar ? [0, spec.bar[0], spec.bar[1]] : null;
+  const front: V3 = bar ? [0, bar[1] - 0.06, bar[2] + 0.1] : [0, seat[1] - 0.12, 0.16];
+  const flagBase: V3 =
+    spec.id === "unicycle" ? [0.06, seat[1] - 0.1, -0.12]
+    : spec.id === "tricycle" ? [0.25, 0.28, -spec.base / 2 - 0.05]
+    : [0.08, r, -spec.base / 2];
+  let petAt: V3;
+  let rack = false;
+  if (spec.id === "unicycle") petAt = [0, seat[1] + 1.22, -0.02];
+  else if (spec.id === "tandem") petAt = [0, bar![1] - 0.02, bar![2] + 0.16];
+  else if (spec.id === "tricycle") petAt = [0, 0.29, -spec.base / 2 - 0.05];
+  else {
+    petAt = [0, r * 2 + 0.04, -spec.base / 2 - 0.02];
+    rack = true;
+  }
+  return (
+    <group>
+      {acc === "acc_flag" && <Flag base={flagBase} />}
+      {acc === "acc_light" && <HeadLight at={front} />}
+      {acc === "acc_balloon" && <Balloon from={bar ? [0.22, bar[1], bar[2]] : [0.3, seat[1] + 0.3, 0]} />}
+      {pet && rack && (
+        <group>
+          <mesh position={[0, r * 2 + 0.02, -spec.base / 2 + 0.04]} castShadow>
+            <boxGeometry args={[0.16, 0.025, 0.3]} />
+            <meshStandardMaterial color="#555" metalness={0.6} />
+          </mesh>
+          {[-1, 1].map((sx) => (
+            <Tube key={sx} a={[sx * 0.07, r * 2 + 0.01, -spec.base / 2 + 0.12]} b={[sx * 0.06, r, -spec.base / 2]} r={0.01} color="#555" />
+          ))}
+        </group>
+      )}
+      {pet && <Pet kind={pet} at={petAt} anim={anim} />}
+    </group>
+  );
+}
+
+export function Bike({ spec, anim, equip }: { spec: BikeSpec; anim: AnimState; equip?: Equipped }) {
+  const frameMat = useItemMaterial(item(equip, "paint"), spec.frame, { metalness: 0.3, roughness: 0.4 });
+  const rimItem = item(equip, "rim");
+  const rimMatRaw = useItemMaterial(rimItem, spec.accent, { metalness: 0.6, roughness: 0.3 });
+  const rimMat = rimItem ? rimMatRaw : undefined;
   const wheelRefs = useRef<(THREE.Group | null)[]>([]);
   const rearSmallRefs = useRef<(THREE.Group | null)[]>([]);
 
@@ -194,13 +243,14 @@ export function Bike({ spec, anim }: { spec: BikeSpec; anim: AnimState }) {
     const crown: V3 = [0, r + 0.42, 0];
     return (
       <group>
-        <Wheel ref={(el) => { wheelRefs.current[0] = el; }} r={r} tire={spec.tire} rim={spec.accent} position={[0, r, 0]} spokes={12} />
-        <Tube a={[-0.06, r, 0]} b={off(crown, -0.06)} r={0.02} color={frame} />
-        <Tube a={[0.06, r, 0]} b={off(crown, 0.06)} r={0.02} color={frame} />
-        <Tube a={off(crown, -0.07)} b={off(crown, 0.07)} r={0.025} color={frame} />
+        <Wheel ref={(el) => { wheelRefs.current[0] = el; }} r={r} tire={spec.tire} rim={spec.accent} rimMat={rimMat} position={[0, r, 0]} spokes={12} />
+        <Tube a={[-0.06, r, 0]} b={off(crown, -0.06)} r={0.02} color={frame} mat={frameMat} />
+        <Tube a={[0.06, r, 0]} b={off(crown, 0.06)} r={0.02} color={frame} mat={frameMat} />
+        <Tube a={off(crown, -0.07)} b={off(crown, 0.07)} r={0.025} color={frame} mat={frameMat} />
         <Tube a={crown} b={[0, seat[1] - 0.04, 0]} r={0.022} color="#ccc" metalness={0.8} />
         <Saddle p={seat} color={spec.accent} />
         <Crank spec={spec} at={[0, r, 0]} anim={anim} color={frame} />
+        <Extras spec={spec} equip={equip} anim={anim} />
       </group>
     );
   }
@@ -213,17 +263,17 @@ export function Bike({ spec, anim }: { spec: BikeSpec; anim: AnimState }) {
     const rearZ = -spec.base / 2;
     return (
       <group>
-        <Wheel ref={(el) => { wheelRefs.current[0] = el; }} r={r} tire={spec.tire} rim="#fff" position={front} spokes={6} />
+        <Wheel ref={(el) => { wheelRefs.current[0] = el; }} r={r} tire={spec.tire} rim="#fff" rimMat={rimMat} position={front} spokes={6} />
         {[-1, 1].map((s, i) => (
           <Wheel key={s} ref={(el) => { rearSmallRefs.current[i] = el; }} r={0.18} tire={0.045} rim="#fff" position={[0.34 * s, rearY, rearZ]} spokes={5} />
         ))}
-        <Tube a={[-0.05, r, front[2]]} b={off(head, -0.05)} r={0.022} color={frame} />
-        <Tube a={[0.05, r, front[2]]} b={off(head, 0.05)} r={0.022} color={frame} />
-        <Tube a={head} b={bar} r={0.025} color={frame} />
-        <Tube a={lerp3(front, head, 0.7)} b={[0, 0.38, -0.1]} r={0.035} color={frame} />
-        <Tube a={[0, 0.38, -0.1]} b={[0, rearY + 0.04, rearZ]} r={0.035} color={frame} />
-        <Tube a={[-0.36, rearY, rearZ]} b={[0.36, rearY, rearZ]} r={0.025} color={frame} />
-        <Tube a={[0, 0.38, -0.1]} b={[0, seat[1] - 0.04, seat[2]]} r={0.03} color={frame} />
+        <Tube a={[-0.05, r, front[2]]} b={off(head, -0.05)} r={0.022} color={frame} mat={frameMat} />
+        <Tube a={[0.05, r, front[2]]} b={off(head, 0.05)} r={0.022} color={frame} mat={frameMat} />
+        <Tube a={head} b={bar} r={0.025} color={frame} mat={frameMat} />
+        <Tube a={lerp3(front, head, 0.7)} b={[0, 0.38, -0.1]} r={0.035} color={frame} mat={frameMat} />
+        <Tube a={[0, 0.38, -0.1]} b={[0, rearY + 0.04, rearZ]} r={0.035} color={frame} mat={frameMat} />
+        <Tube a={[-0.36, rearY, rearZ]} b={[0.36, rearY, rearZ]} r={0.025} color={frame} mat={frameMat} />
+        <Tube a={[0, 0.38, -0.1]} b={[0, seat[1] - 0.04, seat[2]]} r={0.03} color={frame} mat={frameMat} />
         <mesh position={[0, rearY + 0.08, rearZ - 0.05]} castShadow>
           <boxGeometry args={[0.55, 0.03, 0.22]} />
           <meshStandardMaterial color={spec.accent} />
@@ -231,6 +281,7 @@ export function Bike({ spec, anim }: { spec: BikeSpec; anim: AnimState }) {
         <Saddle p={seat} color={spec.accent} />
         <Handlebar spec={spec} p={bar} />
         <Crank spec={spec} at={front} anim={anim} color={frame} />
+        <Extras spec={spec} equip={equip} anim={anim} />
       </group>
     );
   }
@@ -253,33 +304,33 @@ export function Bike({ spec, anim }: { spec: BikeSpec; anim: AnimState }) {
 
   return (
     <group>
-      <Wheel ref={(el) => { wheelRefs.current[0] = el; }} r={r} tire={spec.tire} rim={spec.accent} position={rear} deep={spec.id === "fixie"} whitewall={spec.id === "cruiser"} spokes={spec.id === "fixie" ? 3 : 10} />
-      <Wheel ref={(el) => { wheelRefs.current[1] = el; }} r={r} tire={spec.tire} rim={spec.accent} position={front} deep={spec.id === "fixie"} whitewall={spec.id === "cruiser"} spokes={spec.id === "fixie" ? 3 : 10} />
+      <Wheel ref={(el) => { wheelRefs.current[0] = el; }} r={r} tire={spec.tire} rim={spec.accent} rimMat={rimMat} position={rear} deep={spec.id === "fixie"} whitewall={spec.id === "cruiser"} spokes={spec.id === "fixie" ? 3 : 10} />
+      <Wheel ref={(el) => { wheelRefs.current[1] = el; }} r={r} tire={spec.tire} rim={spec.accent} rimMat={rimMat} position={front} deep={spec.id === "fixie"} whitewall={spec.id === "cruiser"} spokes={spec.id === "fixie" ? 3 : 10} />
 
       {/* 포크 / 헤드 / 스템 */}
       <Tube a={[-0.05, r, front[2]]} b={off(headLow, -0.04)} r={spec.id === "mtb" ? 0.03 : 0.018} color={forkColor} />
       <Tube a={[0.05, r, front[2]]} b={off(headLow, 0.04)} r={spec.id === "mtb" ? 0.03 : 0.018} color={forkColor} />
-      <Tube a={headLow} b={headTop} r={0.035} color={frame} />
+      <Tube a={headLow} b={headTop} r={0.035} color={frame} mat={frameMat} />
       <Tube a={headTop} b={stemTop} r={0.02} color="#ccc" metalness={0.8} />
 
       {/* 메인 삼각형 */}
-      <Tube a={bb} b={seatTop} r={thick} color={frame} />
+      <Tube a={bb} b={seatTop} r={thick} color={frame} mat={frameMat} />
       {stepThrough ? (
-        <Tube a={lerp3(bb, seatTop, 0.35)} b={lerp3(headLow, headTop, 0.2)} r={thick} color={frame} />
+        <Tube a={lerp3(bb, seatTop, 0.35)} b={lerp3(headLow, headTop, 0.2)} r={thick} color={frame} mat={frameMat} />
       ) : (
-        <Tube a={lerp3(bb, seatTop, 0.85)} b={headTop} r={thick} color={frame} />
+        <Tube a={lerp3(bb, seatTop, 0.85)} b={headTop} r={thick} color={frame} mat={frameMat} />
       )}
-      <Tube a={bb} b={headLow} r={thick * 1.15} color={frame} />
-      <Tube a={off(bb, -0.04)} b={off(rear, -0.05)} r={0.014} color={frame} />
-      <Tube a={off(bb, 0.04)} b={off(rear, 0.05)} r={0.014} color={frame} />
-      <Tube a={off(lerp3(bb, seatTop, 0.8), -0.03)} b={off(rear, -0.05)} r={0.013} color={frame} />
-      <Tube a={off(lerp3(bb, seatTop, 0.8), 0.03)} b={off(rear, 0.05)} r={0.013} color={frame} />
+      <Tube a={bb} b={headLow} r={thick * 1.15} color={frame} mat={frameMat} />
+      <Tube a={off(bb, -0.04)} b={off(rear, -0.05)} r={0.014} color={frame} mat={frameMat} />
+      <Tube a={off(bb, 0.04)} b={off(rear, 0.05)} r={0.014} color={frame} mat={frameMat} />
+      <Tube a={off(lerp3(bb, seatTop, 0.8), -0.03)} b={off(rear, -0.05)} r={0.013} color={frame} mat={frameMat} />
+      <Tube a={off(lerp3(bb, seatTop, 0.8), 0.03)} b={off(rear, 0.05)} r={0.013} color={frame} mat={frameMat} />
 
       {tandem && (
         <>
-          <Tube a={bb} b={bb2} r={thick} color={frame} />
-          <Tube a={bb2} b={[0, seat2[1] - 0.05, seat2[2]]} r={thick} color={frame} />
-          <Tube a={[0, seat2[1] - 0.12, seat2[2]]} b={lerp3(bb, seatTop, 0.85)} r={thick} color={frame} />
+          <Tube a={bb} b={bb2} r={thick} color={frame} mat={frameMat} />
+          <Tube a={bb2} b={[0, seat2[1] - 0.05, seat2[2]]} r={thick} color={frame} mat={frameMat} />
+          <Tube a={[0, seat2[1] - 0.12, seat2[2]]} b={lerp3(bb, seatTop, 0.85)} r={thick} color={frame} mat={frameMat} />
           <Tube a={[0, seat2[1] - 0.12, seat2[2]]} b={[0, 0.9, -0.25]} r={0.018} color="#ccc" />
           <Tube a={[-0.18, 0.9, -0.25]} b={[0.18, 0.9, -0.25]} r={0.016} color="#ccc" />
           <Saddle p={seat2} color={spec.accent} />
@@ -312,6 +363,7 @@ export function Bike({ spec, anim }: { spec: BikeSpec; anim: AnimState }) {
       <Saddle p={seat} color={spec.id === "cruiser" ? "#8d5524" : "#2b2b2b"} />
       <Handlebar spec={spec} p={bar} />
       <Crank spec={spec} at={bb} anim={anim} color={frame} />
+      <Extras spec={spec} equip={equip} anim={anim} />
     </group>
   );
 }

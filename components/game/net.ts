@@ -75,7 +75,7 @@ export function useNet(profile: Profile, myId: string) {
       for (const [key, metas] of Object.entries(state)) {
         if (key === myId || !metas[0]) continue;
         const m = metas[0];
-        list.push({ id: key, nickname: m.nickname, color: m.color, hat: m.hat, bike: m.bike });
+        list.push({ id: key, nickname: m.nickname, color: m.color, hat: m.hat, bike: m.bike, equip: m.equip ?? {} });
         ensure(key);
       }
       for (const id of [...remotes.current.keys()]) {
@@ -135,7 +135,7 @@ export function useNet(profile: Profile, myId: string) {
       if (status === "SUBSCRIBED") {
         ready.current = true;
         setConnected(true);
-        await ch.track({ id: myId, nickname: profile.nickname, color: profile.color, hat: profile.hat, bike: profile.bike });
+        await ch.track({ id: myId, nickname: profile.nickname, color: profile.color, hat: profile.hat, bike: profile.bike, equip: profile.equip ?? {} });
       } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         ready.current = false;
         setConnected(false);

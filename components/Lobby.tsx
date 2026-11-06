@@ -9,6 +9,8 @@ import {
 } from "@/lib/profile";
 import { supabase, type RideRecord } from "@/lib/supabase";
 import { newAnim, now } from "./three/anim";
+import Garage from "./Garage";
+import { ensurePlayer, type PlayerData } from "@/lib/player";
 
 const Preview = dynamic(() => import("./Preview"), {
   ssr: false,
@@ -28,13 +30,21 @@ export default function Lobby() {
   const [p, setP] = useState<Profile>(DEFAULT_PROFILE);
   const [board, setBoard] = useState<RideRecord[] | null>(null);
   const [tab, setTab] = useState<"distance" | "trick_score">("distance");
+  const [player, setPlayer] = useState<PlayerData | null>(null);
+  const [playerErr, setPlayerErr] = useState("");
   const [error, setError] = useState("");
   const anim = useMemo(() => newAnim(), []);
 
   useEffect(() => {
     const saved = loadProfile();
     if (saved) setP(saved);
+    ensurePlayer(saved?.nickname ?? "라이더")
+      .then(setPlayer)
+      .catch((e) => setPlayerErr((e as Error).message));
   }, []);
+
+  // 미리보기에 장착 아이템 반영
+  const shown: Profile = useMemo(() => ({ ...p, equip: player?.equipped ?? {} }), [p, player]);
 
   useEffect(() => {
     setBoard(null);
@@ -59,7 +69,7 @@ export default function Lobby() {
       setError("닉네임은 16자까지 가능해요.");
       return;
     }
-    saveProfile({ ...p, nickname });
+    saveProfile({ ...p, nickname, equip: player?.equipped ?? {} });
     router.push("/ride");
   };
 
@@ -73,8 +83,9 @@ export default function Lobby() {
       <section className="lobby-grid">
         <div className="card preview-card">
           <div className="preview">
-            <Preview profile={p} anim={anim} />
+            <Preview profile={shown} anim={anim} />
           </div>
+          {player && <div className="preview-wallet">⭐ {player.stars.toLocaleString()}</div>}
           <div className="row center">
             {EMOTES.map((e) => (
               <button
@@ -197,6 +208,7 @@ export default function Lobby() {
           </ul>
         </div>
       </section>
+      <Garage player={player} onChange={setPlayer} error={playerErr} />
     </main>
   );
 }

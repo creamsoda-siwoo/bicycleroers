@@ -11,11 +11,12 @@ interface WheelProps {
   deep?: boolean;
   spokes?: number;
   whitewall?: boolean;
+  rimMat?: THREE.Material;
 }
 
 /** 바퀴: x축으로 굴러감 (진행방향 +z) */
 export const Wheel = forwardRef<THREE.Group, WheelProps>(function Wheel(
-  { r, tire, rim, position, deep, spokes = 8, whitewall },
+  { r, tire, rim, position, deep, spokes = 8, whitewall, rimMat },
   ref,
 ) {
   const inner = r - tire;
@@ -35,14 +36,14 @@ export const Wheel = forwardRef<THREE.Group, WheelProps>(function Wheel(
         )}
         {/* 림 */}
         {deep ? (
-          <mesh rotation={[0, 0, Math.PI / 2]}>
+          <mesh rotation={[0, 0, Math.PI / 2]} material={rimMat}>
             <cylinderGeometry args={[inner - tire * 0.3, inner - tire * 0.3, 0.03, 32, 1, true]} />
-            <meshStandardMaterial color={rim} side={THREE.DoubleSide} />
+            {!rimMat && <meshStandardMaterial color={rim} side={THREE.DoubleSide} />}
           </mesh>
         ) : (
-          <mesh rotation={[0, Math.PI / 2, 0]}>
-            <torusGeometry args={[inner - tire * 0.6, 0.012, 6, 36]} />
-            <meshStandardMaterial color={rim} metalness={0.6} roughness={0.3} />
+          <mesh rotation={[0, Math.PI / 2, 0]} material={rimMat}>
+            <torusGeometry args={[inner - tire * 0.6, rimMat ? 0.022 : 0.012, 6, 36]} />
+            {!rimMat && <meshStandardMaterial color={rim} metalness={0.6} roughness={0.3} />}
           </mesh>
         )}
         {/* 바퀴살 */}
