@@ -1,0 +1,64 @@
+import type { BikeId } from "./bikes";
+
+export type HatId = "helmet" | "cap" | "bunny" | "beanie" | "crown" | "none";
+export type EmoteId = "bow" | "wave" | "cheer";
+
+export interface Profile {
+  nickname: string;
+  color: string;
+  hat: HatId;
+  bike: BikeId;
+}
+
+export const COLORS = [
+  "#ffb703", "#fb8500", "#e63946", "#ff8fab",
+  "#8338ec", "#3a86ff", "#06d6a0", "#8d6e63",
+];
+
+export const HATS: { id: HatId; name: string }[] = [
+  { id: "helmet", name: "헬멧" },
+  { id: "cap", name: "캡모자" },
+  { id: "bunny", name: "토끼귀" },
+  { id: "beanie", name: "비니" },
+  { id: "crown", name: "왕관" },
+  { id: "none", name: "없음" },
+];
+
+export const EMOTES: { id: EmoteId; label: string; key: string; dur: number }[] = [
+  { id: "bow", label: "🙇 절하기", key: "B", dur: 3.2 },
+  { id: "wave", label: "👋 인사", key: "H", dur: 2.2 },
+  { id: "cheer", label: "🙌 만세", key: "C", dur: 2.2 },
+];
+
+export const EMOTE_DUR: Record<EmoteId, number> = Object.fromEntries(
+  EMOTES.map((e) => [e.id, e.dur]),
+) as Record<EmoteId, number>;
+
+const KEY = "bicycleroers-profile";
+
+export const DEFAULT_PROFILE: Profile = {
+  nickname: "",
+  color: COLORS[0],
+  hat: "helmet",
+  bike: "road",
+};
+
+export function loadProfile(): Profile | null {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as Profile;
+    if (!p.nickname) return null;
+    return { ...DEFAULT_PROFILE, ...p };
+  } catch {
+    return null;
+  }
+}
+
+export function saveProfile(p: Profile) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(p));
+  } catch {
+    /* 저장 불가 환경 무시 */
+  }
+}
