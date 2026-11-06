@@ -15,6 +15,9 @@
 - 최장 거리 랭킹 ("그만 타기" 시 10m 이상이면 저장)
 - 모바일 터치 컨트롤
 
+## 바로 플레이
+https://bicycleroers.vercel.app (Vercel, 브랜치에 push하면 자동 배포)
+
 ## 실행
 ```bash
 npm install
