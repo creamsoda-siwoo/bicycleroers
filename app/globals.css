@@ -302,7 +302,7 @@ kbd {
 .racebar .muted { color: #ced4da; }
 .racebar .best { color: #80ffdb; }
 @media (pointer: coarse), (max-width: 760px) {
-  .racebar { top: calc(70px + env(safe-area-inset-top)); left: auto; right: calc(8px + env(safe-area-inset-right)); transform: none; font-size: 11px; padding: 4px 12px; gap: 6px; }
+  .racebar { top: calc(132px + env(safe-area-inset-top)); left: auto; right: calc(8px + env(safe-area-inset-right)); transform: none; font-size: 11px; padding: 4px 12px; gap: 6px; }
   .racebar b { font-size: 18px; }
   .racebar > span:first-child { display: none; }
 }
@@ -312,3 +312,35 @@ kbd {
 .mapcard .emoji { font-size: 24px; }
 .mapcard small { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .mapcard.on { border-color: var(--accent); background: #fff1eb; }
+
+/* 속도선 */
+.speedlines {
+  position: absolute; inset: -10%; pointer-events: none; transition: opacity 0.2s;
+  background: repeating-conic-gradient(from 0deg at 50% 45%, rgba(255,255,255,0) 0deg 4deg, rgba(255,255,255,0.55) 4deg 4.4deg, rgba(255,255,255,0) 4.4deg 9deg);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 45%, transparent 38%, #000 75%);
+  mask-image: radial-gradient(ellipse at 50% 45%, transparent 38%, #000 75%);
+  animation: lines 0.12s steps(2) infinite;
+}
+@keyframes lines { from { transform: rotate(0deg); } to { transform: rotate(2deg); } }
+
+/* 휴대폰 핸들 */
+.steerpad {
+  position: relative; width: 190px; height: 76px; border-radius: 40px; touch-action: none;
+  background: rgba(255,255,255,0.75); box-shadow: 0 3px 0 rgba(0,0,0,0.15), inset 0 0 0 3px rgba(255,255,255,0.9);
+  display: flex; align-items: center; justify-content: space-between; padding: 0 16px; user-select: none; -webkit-user-select: none;
+}
+.steer-hint { color: #8d99ae; font-size: 18px; pointer-events: none; }
+.steer-knob {
+  position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%;
+  background: var(--accent); display: grid; place-items: center; font-size: 26px; box-shadow: 0 3px 0 #d95f3b; pointer-events: none;
+  transition: transform 0.06s linear;
+}
+@media (pointer: coarse) and (max-height: 480px), (max-width: 760px) and (max-height: 480px) {
+  .steerpad { width: 170px; height: 64px; }
+  .steer-knob { width: 48px; height: 48px; margin: -24px 0 0 -24px; font-size: 22px; }
+}
+.help { max-width: calc(100vw - 720px); overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1100px) { .help { display: none; } }
+@media (pointer: coarse) and (max-height: 480px), (max-width: 760px) and (max-height: 480px) {
+  .racebar { top: calc(8px + env(safe-area-inset-top)); right: auto; left: 50%; transform: translateX(-50%); }
+}

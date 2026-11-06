@@ -18,6 +18,11 @@ export interface MovePayload {
   h: number;
   s: number;
   l: number;
+  /** 일어서서 밟기, 브레이크, 미끄러짐, 페달 중 */
+  sp?: number;
+  bk?: number;
+  sl?: number;
+  pd?: number;
 }
 
 export interface Remote {
@@ -26,6 +31,7 @@ export interface Remote {
   anim: AnimState;
   seen: boolean;
   lastAt: number;
+  pedaling?: boolean;
 }
 
 export interface Bubble {
@@ -94,6 +100,10 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
       r.target = { x: p.x, y: p.y, z: p.z, h: p.h };
       r.anim.speed = p.s;
       r.anim.lean = p.l;
+      r.anim.sprint = p.sp ?? 0;
+      r.anim.brake = p.bk ?? 0;
+      r.anim.slip = p.sl ?? 0;
+      r.pedaling = !!p.pd;
       r.lastAt = now();
       if (!r.seen) {
         r.cur = { ...r.target };

@@ -108,7 +108,7 @@ function Crank({ spec, at, anim, color }: { spec: BikeSpec; at: V3; anim: AnimSt
   const ref = useRef<THREE.Group>(null);
   const L = crankLength(spec);
   useFrame(() => {
-    if (ref.current) ref.current.rotation.x = crankAngle(spec, anim.dist);
+    if (ref.current) ref.current.rotation.x = anim.crank;
   });
   return (
     <group position={at}>

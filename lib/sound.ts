@@ -97,3 +97,49 @@ export function sfx(name: Sfx, volume = 1) {
     case "lift": tone(300, t, 0.6, "sine", 0.2 * v, 900); break;
   }
 }
+
+// ── 연속 소리 (바람, 미끄러짐) ──
+interface Loop {
+  gain: GainNode;
+  filter: BiquadFilterNode;
+}
+const loops: Record<string, Loop> = {};
+
+function loop(name: string, freq: number, type: BiquadFilterType, q = 0.7): Loop | null {
+  if (!ctx || !master) return null;
+  if (loops[name]) return loops[name];
+  const len = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  const filter = ctx.createBiquadFilter();
+  filter.type = type;
+  filter.frequency.value = freq;
+  filter.Q.value = q;
+  const gain = ctx.createGain();
+  gain.gain.value = 0;
+  src.connect(filter).connect(gain).connect(master);
+  src.start();
+  loops[name] = { gain, filter };
+  return loops[name];
+}
+
+/** 0~1: 속도에 따른 바람 소리 */
+export function setWind(level: number) {
+  const l = loop("wind", 500, "lowpass");
+  if (!l || !ctx) return;
+  const v = muted ? 0 : Math.max(0, Math.min(1, level)) ** 2 * 0.22;
+  l.gain.gain.setTargetAtTime(v, ctx.currentTime, 0.15);
+  l.filter.frequency.setTargetAtTime(300 + level * 900, ctx.currentTime, 0.2);
+}
+
+/** 0~1: 타이어 미끄러지는 소리 */
+export function setSkid(level: number) {
+  const l = loop("skid", 2600, "bandpass", 3);
+  if (!l || !ctx) return;
+  const v = muted ? 0 : Math.max(0, Math.min(1, level)) * 0.25;
+  l.gain.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
+}

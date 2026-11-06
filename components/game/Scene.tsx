@@ -11,7 +11,9 @@ import { Rider } from "../three/Rider";
 import { Trail } from "../three/Custom";
 import { stars } from "../three/World";
 import { CRASH_DUR, now, type AnimState } from "../three/anim";
-import { input, trickQueue } from "./input";
+import { axis, input, pollGamepad, queueTrick, trickQueue } from "./input";
+import { addSkid } from "../three/Skids";
+import { setSkid, setWind } from "@/lib/sound";
 import type { Bubble, MovePayload, NetPlayer, Remote } from "./net";
 
 import { race, raceResults } from "./state";
@@ -87,6 +89,13 @@ export function Player({
     airStart: 0,
     combo: [] as TrickId[],
     hoopAt: map.hoops.map(() => -10),
+    steer: 0,
+    yawRate: 0,
+    drift: 0,
+    driftStart: 0,
+    skidAcc: 0,
+    shake: 0,
+    camRoll: 0,
   });
   const lookAt = useRef(new THREE.Vector3());
   const tmp = useRef(new THREE.Vector3()).current;
@@ -132,6 +141,23 @@ export function Player({
     }
     const boosting = t < s.boostUntil;
 
+    // ── 입력 (키보드 + 조이스틱/게임패드) ──
+    const padPressed = pollGamepad();
+    for (const b of padPressed) {
+      if (b === 2) queueTrick("backflip");
+      else if (b === 1) queueTrick("frontflip");
+      else if (b === 3) queueTrick("spin");
+      else if (b === 4) queueTrick("superman");
+      else if (b === 5) queueTrick("nohand");
+    }
+    const throttle = bowing ? 0 : Math.max(input.f ? 1 : 0, axis.throttle);
+    const brakeIn = bowing ? 0 : Math.max(input.b ? 1 : 0, axis.brake);
+    const jumpIn = input.jump || axis.jump;
+    const rawSteer = bowing ? 0 : axis.steerActive ? axis.steer : (input.l ? 1 : 0) - (input.r ? 1 : 0);
+    // 핸들은 부드럽게 따라옴 (놓으면 더 빨리 돌아옴)
+    const steerRate = Math.abs(rawSteer) > Math.abs(s.steer) ? 9 : 12;
+    s.steer += (rawSteer - s.steer) * (1 - Math.exp(-steerRate * dt));
+
     // ── 속도 ──
     const paved = map.paved(s.x, s.z);
     const wet = map.water(s.x, s.z) && s.y < 0.2;
@@ -146,19 +172,55 @@ export function Player({
     if (boosting) cap = spec.maxSpeed * 1.6;
     cap *= 1 + Math.max(0, -slope) * 1.6; // 내리막에서는 더 빨리
     if (wet) cap = 2.5;
+    const v = Math.abs(s.speed);
     if (s.grounded && !stunned) s.speed -= 9 * slope * dt;
-    if (!bowing && input.f) s.speed += spec.accel * dt * (boosting ? 2 : 1);
-    else if (!bowing && input.b) s.speed -= (s.speed > 0 ? spec.accel * (icy ? 0.4 : 1.8) : spec.accel * 0.5) * dt;
-    else s.speed -= s.speed * (s.grounded ? (icy ? 0.15 : 0.9) : 0.1) * dt;
-    if (bowing) s.speed *= Math.max(0, 1 - 5 * dt);
-    if (s.speed > cap) s.speed += (cap - s.speed) * Math.min(1, 3 * dt);
-    s.speed = Math.max(-spec.maxSpeed * 0.3, s.speed);
-    if (Math.abs(s.speed) < 0.02 && !input.f && !input.b) s.speed = 0;
 
-    // ── 방향 ──
-    const steer = bowing ? 0 : (input.l ? 1 : 0) - (input.r ? 1 : 0);
-    const turnFactor = Math.min(1, Math.abs(s.speed) / 2.5) * (s.speed < 0 ? -1 : 1);
-    s.h += steer * spec.turn * turnFactor * dt * (s.grounded ? 1 : 0.5);
+    // 드리프트: 달리면서 브레이크 + 방향
+    const drifting = s.grounded && !icy && !wet && brakeIn > 0.5 && Math.abs(s.steer) > 0.45 && s.speed > 6;
+    if (drifting && s.drift === 0) s.driftStart = t;
+    s.drift = drifting ? Math.min(1, s.drift + dt * 4) : Math.max(0, s.drift - dt * 3);
+
+    if (s.grounded) {
+      // 페달: 출발할 때 힘차고 최고속도에 가까울수록 약해짐
+      if (throttle > 0 && s.speed < cap) {
+        const r = Math.max(0, s.speed) / cap;
+        const torque = spec.accel * (1.35 - r * r) * (boosting ? 1.8 : 1);
+        s.speed += torque * throttle * dt;
+      }
+      if (brakeIn > 0) {
+        if (drifting) s.speed -= 3.5 * dt;
+        else if (s.speed > 0.2) s.speed -= (icy ? 2.5 : 13) * brakeIn * dt;
+        else s.speed -= spec.accel * 0.45 * brakeIn * dt; // 후진
+      }
+      // 구름 저항 + 공기 저항 (관성으로 부드럽게 굴러감)
+      const roll = icy ? 0.08 : paved ? 0.35 : 0.9;
+      const drag = roll + 0.0045 * v * v;
+      if (s.speed > 0) s.speed = Math.max(throttle > 0 || brakeIn > 0 ? -99 : 0, s.speed - drag * dt);
+      else if (s.speed < 0) s.speed = Math.min(0, s.speed + (drag + 1) * dt);
+    } else {
+      s.speed -= 0.004 * v * v * Math.sign(s.speed) * dt;
+    }
+    if (bowing) s.speed *= Math.max(0, 1 - 5 * dt);
+    if (s.speed > cap) s.speed += (cap - s.speed) * Math.min(1, (throttle > 0 ? 2 : 1.2) * dt);
+    s.speed = Math.max(-spec.maxSpeed * 0.3, s.speed);
+
+    // ── 방향: 속도가 빠를수록 크게 돈다 ──
+    const vn = Math.abs(s.speed);
+    const low = Math.min(1, vn / 2.2); // 멈춰있으면 못 돔
+    const hi = 1 / (1 + Math.max(0, vn - 4) / (spec.maxSpeed * 0.9));
+    let yaw = s.steer * spec.turn * 1.25 * low * hi * (s.speed < 0 ? -1 : 1);
+    if (!s.grounded) yaw *= 0.55;
+    if (s.drift > 0) yaw *= 1 + s.drift * 0.7;
+    s.yawRate = yaw;
+    s.h += yaw * dt;
+
+    // 페달·자세 애니메이션
+    const pedaling = throttle > 0 && s.grounded;
+    const crankSpeed = Math.max(vn, pedaling ? 2.5 : 0) / spec.wheel / spec.gear;
+    if (pedaling || spec.id === "fixie" || spec.id === "unicycle" || spec.id === "tricycle") anim.crank += crankSpeed * dt * (s.speed < 0 ? -1 : 1);
+    const wantSprint = pedaling && s.speed < cap * 0.55 && spec.id !== "unicycle" ? 1 : 0;
+    anim.sprint += (wantSprint - anim.sprint) * Math.min(1, 5 * dt);
+    anim.brake += ((brakeIn > 0 && s.speed > 1 && s.grounded ? 1 : 0) - anim.brake) * Math.min(1, 8 * dt);
 
     // ── 이동 + 충돌 ──
     const px = s.x;
@@ -166,7 +228,7 @@ export function Player({
     // 얼음 위에서는 속도 방향이 천천히 따라옴 (미끄러짐)
     const wantVx = Math.sin(s.h) * s.speed;
     const wantVz = Math.cos(s.h) * s.speed;
-    const grip = icy ? 1 - Math.exp(-0.8 * dt) : 1;
+    const grip = icy ? 1 - Math.exp(-0.8 * dt) : s.drift > 0 ? 1 - Math.exp(-(9 - s.drift * 7) * dt) : 1;
     s.vx += (wantVx - s.vx) * grip;
     s.vz += (wantVz - s.vz) * grip;
     s.x += s.vx * dt;
@@ -186,7 +248,7 @@ export function Player({
     // ── 높이 / 점프 ──
     const g = groundHeight(s.x, s.z);
     if (s.grounded) {
-      if (input.jump && !bowing) {
+      if (jumpIn && !bowing) {
         s.vy = spec.jump;
         s.grounded = false;
         s.airStart = t;
@@ -204,6 +266,9 @@ export function Player({
       s.vy -= GRAVITY * dt;
       s.y += s.vy * dt;
       if (s.y <= g) {
+        const impact = Math.min(1, Math.max(0, -s.vy - 3) / 12);
+        anim.squash = Math.max(anim.squash, impact);
+        s.shake = Math.max(s.shake, impact * 0.35);
         s.y = g;
         s.vy = 0;
         s.grounded = true;
@@ -280,7 +345,39 @@ export function Player({
     // ── 애니메이션 상태 ──
     anim.speed = s.speed;
     anim.dist += s.speed * dt;
-    anim.lean = steer * Math.min(1, Math.abs(s.speed) / 6) * 0.32;
+    // 실제 자전거처럼 원심력만큼 안쪽으로 기울기
+    const leanT = Math.max(-0.62, Math.min(0.62, Math.atan((vn * s.yawRate) / 9.8)));
+    anim.lean += (leanT * (s.grounded ? 1 : 0.4) - anim.lean) * Math.min(1, 8 * dt);
+    anim.squash = Math.max(0, anim.squash - dt * 3);
+    // 드리프트 시 차체가 바깥쪽으로 틀어짐
+    const vAng = Math.atan2(s.vx, s.vz);
+    let slip = s.h - vAng;
+    slip = Math.atan2(Math.sin(slip), Math.cos(slip));
+    anim.slip = vn > 1 ? Math.max(-0.6, Math.min(0.6, -slip)) * (s.drift > 0 ? 1 : 0.4) : 0;
+
+    // 스키드 자국 + 소리
+    const skidding = s.grounded && vn > 3 && (s.drift > 0.3 || (anim.brake > 0.6 && vn > 6) || (icy && Math.abs(slip) > 0.25));
+    if (skidding) {
+      s.skidAcc += vn * dt;
+      while (s.skidAcc > 0.3) {
+        s.skidAcc -= 0.3;
+        const rx = s.x - Math.sin(s.h) * spec.base * 0.5;
+        const rz = s.z - Math.cos(s.h) * spec.base * 0.5;
+        addSkid(rx, groundHeight(rx, rz), rz, s.h, s.drift > 0.3 ? 0.16 : 0.1);
+      }
+    }
+    setSkid(skidding ? Math.min(1, vn / 12) : 0);
+    setWind((vn - 6) / (spec.maxSpeed * 1.2));
+    // 드리프트 점수
+    if (!drifting && s.drift > 0 && s.driftStart > 0) {
+      const dur = t - s.driftStart;
+      if (dur > 0.7) {
+        const pts = Math.round(dur * 180);
+        stats.trickScore += pts;
+        popups.push({ text: `🌀 드리프트 ${dur.toFixed(1)}초 +${pts}`, kind: "trick" });
+      }
+      s.driftStart = 0;
+    }
     const targetPitch = s.grounded
       ? slopePitch(s.x, s.z, s.h)
       : -Math.atan2(s.vy, Math.max(4, Math.abs(s.speed))) * 0.6;
@@ -390,14 +487,16 @@ export function Player({
       cy = s.y + 18;
       tmp.set(s.x, s.y, s.z);
     } else {
-      const back = 6 + Math.abs(s.speed) * 0.12;
-      cx = s.x - sin * back;
-      cz = s.z - cos * back;
-      cy = s.y + 2.8;
-      tmp.set(s.x + sin * 2, s.y + 1.1, s.z + cos * 2);
+      const back = 5.6 + vn * 0.1;
+      // 코너에서는 도는 쪽을 미리 바라봄
+      const look = s.h + s.yawRate * 0.35;
+      cx = s.x - Math.sin(s.h - s.yawRate * 0.12) * back;
+      cz = s.z - Math.cos(s.h - s.yawRate * 0.12) * back;
+      cy = s.y + 2.5 + vn * 0.03;
+      tmp.set(s.x + Math.sin(look) * 3, s.y + 1.1, s.z + Math.cos(look) * 3);
     }
     const cam = camera as THREE.PerspectiveCamera;
-    const fov = boosting ? 72 : 60;
+    const fov = Math.min(84, 56 + vn * 0.85 + (boosting ? 8 : 0));
     if (Math.abs(cam.fov - fov) > 0.1) {
       cam.fov += (fov - cam.fov) * Math.min(1, 4 * dt);
       cam.updateProjectionMatrix();
@@ -408,6 +507,14 @@ export function Player({
     camera.position.z += (cz - camera.position.z) * k;
     lookAt.current.lerp(tmp, 1 - Math.exp(-8 * dt));
     camera.lookAt(lookAt.current);
+    // 기울기 따라 살짝 롤 + 착지 흔들림
+    s.camRoll += ((mode === "chase" ? -anim.lean * 0.25 : 0) - s.camRoll) * Math.min(1, 5 * dt);
+    camera.rotateZ(s.camRoll);
+    if (s.shake > 0.001) {
+      camera.position.x += (Math.random() - 0.5) * s.shake;
+      camera.position.y += (Math.random() - 0.5) * s.shake;
+      s.shake *= Math.exp(-8 * dt);
+    }
 
     // ── 그림자 조명이 플레이어를 따라감 ──
     if (light.current) {
@@ -429,6 +536,10 @@ export function Player({
         h: +s.h.toFixed(3),
         s: +s.speed.toFixed(2),
         l: +anim.lean.toFixed(2),
+        sp: +anim.sprint.toFixed(2),
+        bk: +anim.brake.toFixed(2),
+        sl: +anim.slip.toFixed(2),
+        pd: throttle > 0 ? 1 : 0,
       });
     }
   });
@@ -478,6 +589,10 @@ export function RemoteRider({ player, remote, bubble }: { player: NetPlayer; rem
     c.h += dh * k;
     if (now() - remote.lastAt > 2.5) remote.anim.speed *= 0.95;
     remote.anim.dist += remote.anim.speed * dt;
+    const rs = getBike(player.bike);
+    if (remote.pedaling || rs.id === "fixie" || rs.id === "unicycle" || rs.id === "tricycle") {
+      remote.anim.crank += (Math.max(Math.abs(remote.anim.speed), remote.pedaling ? 2.5 : 0) / rs.wheel / rs.gear) * dt * (remote.anim.speed < 0 ? -1 : 1);
+    }
 
     const g = groundHeight(c.x, c.z);
     const tp = c.y - g > 0.2 ? 0 : slopePitch(c.x, c.z, c.h);

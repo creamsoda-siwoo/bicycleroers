@@ -55,7 +55,12 @@ export function Rider({
     if (leanRef.current) {
       // 외발/세발은 덜 기울임
       const k = spec.id === "tricycle" ? 0.2 : 1;
-      leanRef.current.rotation.z += (-anim.lean * k - leanRef.current.rotation.z) * 0.15;
+      const rock = Math.sin(anim.crank) * 0.07 * anim.sprint;
+      leanRef.current.rotation.z += (-anim.lean * k + rock - leanRef.current.rotation.z) * 0.18;
+      // 브레이크: 앞으로 숙임, 드리프트: 뒷바퀴가 밀려나는 방향으로 틀어짐
+      leanRef.current.rotation.x += (anim.brake * 0.06 - leanRef.current.rotation.x) * 0.2;
+      leanRef.current.rotation.y += (anim.slip - leanRef.current.rotation.y) * 0.2;
+      leanRef.current.position.y = -anim.squash * 0.08;
     }
   });
 

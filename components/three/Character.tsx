@@ -7,7 +7,7 @@ import type { BikeSpec } from "@/lib/bikes";
 import { EMOTE_DUR, TRICK_MAP, type HatId, type Profile } from "@/lib/profile";
 import { placeLimb } from "./Tube";
 import { Wings } from "./Custom";
-import { crankAngle, crankLength } from "./Bike";
+import { crankLength } from "./Bike";
 import { CRASH_DUR, now, type AnimState } from "./anim";
 
 const SKIN = "#ffe3c8";
@@ -231,12 +231,16 @@ export function Character({ spec, profile, anim }: { spec: BikeSpec; profile: Pr
       const dz = spec.bar[1] - seatZ;
       pitch = Math.min(0.6, Math.max(0, Math.atan2(dz, dy + 0.25) * 0.45));
     }
-    const bob = Math.sin(time * 2.2) * 0.008 + Math.abs(Math.sin(crankAngle(spec, anim.dist))) * 0.01 * Math.min(1, anim.speed / 3);
-    v.hip.set(0, seatY + 0.09 + bob, seatZ - 0.02);
+    const bob = Math.sin(time * 2.2) * 0.008 + Math.abs(Math.sin(anim.crank)) * 0.01 * Math.min(1, anim.speed / 3);
+    // 일어서서 밟기: 엉덩이를 들고 앞으로, 좌우로 흔들
+    const spr = anim.sprint;
+    v.hip.set(Math.sin(anim.crank) * 0.04 * spr, seatY + 0.09 + bob + spr * (0.16 + Math.abs(Math.cos(anim.crank)) * 0.04), seatZ - 0.02 + spr * 0.14);
+    // 착지 충격: 몸이 눌림
+    v.hip.y -= anim.squash * 0.12;
 
     // 페달 위치
     const L = crankLength(spec);
-    const ca = crankAngle(spec, anim.dist);
+    const ca = anim.crank;
     const bb = spec.bb;
     v.fR.set(0.13, bb[0] + L * Math.cos(ca), bb[1] + L * Math.sin(ca));
     v.fL.set(-0.13, bb[0] - L * Math.cos(ca), bb[1] - L * Math.sin(ca));
@@ -265,6 +269,7 @@ export function Character({ spec, profile, anim }: { spec: BikeSpec; profile: Pr
       pitch = pitch + (bowPitch - pitch) * bowW;
     }
 
+    pitch += spr * 0.3 * (1 - bowW) + anim.brake * 0.15 + anim.squash * 0.2;
     const cp = Math.cos(pitch);
     const sp = Math.sin(pitch);
     v.shL.set(v.hip.x - 0.17, v.hip.y + 0.36 * cp, v.hip.z + 0.36 * sp);

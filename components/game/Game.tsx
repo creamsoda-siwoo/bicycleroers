@@ -14,10 +14,60 @@ import { race, raceResults, resetRace } from "./state";
 import { getMap, setMap } from "@/lib/maps";
 import { isMuted, setMuted, sfx, unlockAudio } from "@/lib/sound";
 import type { Remote } from "./net";
-import { bindKeyboard, input, queueTrick } from "./input";
+import { axis, bindKeyboard, input, queueTrick } from "./input";
 import { useNet } from "./net";
 
 const BUBBLE_MS = 6000;
+
+/** 휴대폰용 핸들: 좌우로 끄는 만큼 부드럽게 돈다 */
+function SteerPad() {
+  const base = useRef<HTMLDivElement>(null);
+  const knob = useRef<HTMLDivElement>(null);
+  const pid = useRef<number | null>(null);
+  const set = (clientX: number) => {
+    const el = base.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const max = r.width / 2 - 28;
+    const dx = Math.max(-max, Math.min(max, clientX - (r.left + r.width / 2)));
+    if (knob.current) knob.current.style.transform = `translateX(${dx}px)`;
+    const x = dx / max;
+    axis.steer = -Math.sign(x) * Math.pow(Math.abs(x), 1.25);
+    axis.steerActive = true;
+  };
+  const release = () => {
+    pid.current = null;
+    if (knob.current) knob.current.style.transform = "translateX(0px)";
+    axis.steer = 0;
+    axis.steerActive = false;
+  };
+  return (
+    <div
+      ref={base}
+      className="steerpad"
+      aria-label="핸들"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        pid.current = e.pointerId;
+        try {
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        } catch {
+          /* 캡처 실패해도 계속 */
+        }
+        set(e.clientX);
+      }}
+      onPointerMove={(e) => {
+        if (pid.current === e.pointerId) set(e.clientX);
+      }}
+      onPointerUp={release}
+      onPointerCancel={release}
+    >
+      <span className="steer-hint">◀</span>
+      <div ref={knob} className="steer-knob">🚲</div>
+      <span className="steer-hint">▶</span>
+    </div>
+  );
+}
 
 export default function Game() {
   const router = useRouter();
@@ -375,6 +425,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         ))}
       </div>
       {hud.boost && <div className="boost-fx" />}
+      <div className="speedlines" style={{ opacity: Math.max(0, Math.min(0.9, (hud.speed - spec.maxSpeed * 0.75) / (spec.maxSpeed * 0.6))) }} />
 
       {/* 묘기 버튼 */}
       <div className={hud.air ? "tricks air" : "tricks"}>
@@ -450,8 +501,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
 
       {/* 모바일 컨트롤: 왼손 방향, 오른손 페달/브레이크/점프 */}
       <div className="touch touch-left">
-        <button className="tbtn" aria-label="왼쪽" {...hold("l")}>◀</button>
-        <button className="tbtn" aria-label="오른쪽" {...hold("r")}>▶</button>
+        <SteerPad />
       </div>
       <div className="touch touch-right">
         <button className="tbtn small" aria-label="브레이크" {...hold("b")}>▼</button>
@@ -461,7 +511,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         </div>
       </div>
 
-      <div className="help">W/↑ 페달 · S/↓ 브레이크 · A D/← → 방향 · Space 점프 · T 따릉 · 공중에서 Q 백플립 · F 프론트플립 · E 스핀 · G 슈퍼맨 · R 노핸드 · B 절 · H 인사 · C 만세 · V 카메라 · Enter 채팅</div>
+      <div className="help">W/↑ 페달 · S/↓ 브레이크 · A D 방향 · S+방향 드리프트 · Space 점프 → 공중에서 묘기 · T 따릉 · V 카메라 · Enter 채팅 · 🎮 게임패드 OK</div>
     </div>
   );
 }
