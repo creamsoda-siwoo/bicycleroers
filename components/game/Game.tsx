@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
 import { getBike } from "@/lib/bikes";
-import { EMOTES, loadProfile, type EmoteId, type Profile } from "@/lib/profile";
+import { EMOTES, TRICKS, loadProfile, type EmoteId, type Profile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
 import { World } from "../three/World";
 import { newAnim, now } from "../three/anim";
-import { Player, RemoteRider, stats, view } from "./Scene";
-import { bindKeyboard, input } from "./input";
+import { Player, RemoteRider, popups, stats, view } from "./Scene";
+import { bindKeyboard, input, queueTrick } from "./input";
 import { useNet } from "./net";
 
 const BUBBLE_MS = 6000;
@@ -35,7 +35,9 @@ function GameInner({ profile }: { profile: Profile }) {
   const net = useNet(profile, myId);
   const spec = getBike(profile.bike);
 
-  const [hud, setHud] = useState({ speed: 0, dist: 0, stars: 0 });
+  const [hud, setHud] = useState({ speed: 0, dist: 0, stars: 0, trick: 0, air: false, boost: false });
+  const [toasts, setToasts] = useState<{ id: number; text: string; kind: string }[]>([]);
+  const toastId = useRef(0);
   const [, setTick] = useState(0);
   const isTouch = useMemo(
     () => typeof window !== "undefined" && (window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 760),
@@ -71,6 +73,8 @@ function GameInner({ profile }: { profile: Profile }) {
   useEffect(() => {
     stats.dist = 0;
     stats.stars = 0;
+    stats.trickScore = 0;
+    popups.length = 0;
   }, []);
 
   useEffect(() => {
@@ -82,15 +86,31 @@ function GameInner({ profile }: { profile: Profile }) {
       else if (code === "Enter") {
         setChatOpen(true);
         setTimeout(() => chatInput.current?.focus(), 0);
+      } else {
+        const tr = TRICKS.find((x) => `Key${x.key}` === code);
+        if (tr) queueTrick(tr.id);
       }
     });
   }, [doEmote, cycleView]);
 
   useEffect(() => {
+    let n = 0;
     const id = setInterval(() => {
-      setHud({ speed: stats.speed, dist: stats.dist, stars: stats.stars });
-      setTick((t) => t + 1);
-    }, 200);
+      if (popups.length) {
+        const fresh = popups.splice(0).map((p) => ({ id: ++toastId.current, ...p }));
+        setToasts((old) => [...old, ...fresh].slice(-3));
+        for (const f of fresh) {
+          setTimeout(() => setToasts((old) => old.filter((x) => x.id !== f.id)), f.kind === "trick" ? 2200 : 1500);
+        }
+      }
+      if (++n % 2 === 0) {
+        setHud({
+          speed: stats.speed, dist: stats.dist, stars: stats.stars, trick: stats.trickScore,
+          air: stats.airborne, boost: stats.boosting,
+        });
+        setTick((t) => t + 1);
+      }
+    }, 100);
     return () => clearInterval(id);
   }, []);
 
@@ -128,12 +148,13 @@ function GameInner({ profile }: { profile: Profile }) {
     if (saving) return;
     setSaving(true);
     const distance = Math.round(stats.dist);
-    if (distance >= 10) {
+    if (distance >= 10 || stats.trickScore > 0) {
       await supabase.from("bike_rides").insert({
         nickname: profile.nickname,
         bike: profile.bike,
         distance: Math.min(distance, 100000),
         stars: Math.min(stats.stars, 1000),
+        trick_score: Math.min(Math.round(stats.trickScore), 10000000),
       });
     }
     router.push("/");
@@ -167,7 +188,7 @@ function GameInner({ profile }: { profile: Profile }) {
         <hemisphereLight args={["#ffffff", "#7fb069", 1.1]} />
         <ambientLight intensity={0.35} />
         <World />
-        <Player profile={profile} anim={anim} myId={myId} lowPower={isTouch} bubble={bubbleOf(myId)} sendMove={net.sendMove} />
+        <Player profile={profile} anim={anim} myId={myId} lowPower={isTouch} bubble={bubbleOf(myId)} sendMove={net.sendMove} sendTrick={net.sendTrick} />
         {net.players.map((p) => (
           <RemoteRider key={p.id} player={p} remote={net.remotes.current.get(p.id)} bubble={bubbleOf(p.id)} />
         ))}
@@ -185,6 +206,7 @@ function GameInner({ profile }: { profile: Profile }) {
             <div><span className="big">{Math.round(hud.speed * 3.6)}</span><small>km/h</small></div>
             <div><span className="big">{hud.dist >= 1000 ? (hud.dist / 1000).toFixed(2) : Math.round(hud.dist)}</span><small>{hud.dist >= 1000 ? "km" : "m"}</small></div>
             <div><span className="big">⭐ {hud.stars}</span></div>
+            <div><span className="big">🤸 {hud.trick}</span></div>
           </div>
         </div>
         <div className="panel online">
@@ -203,13 +225,39 @@ function GameInner({ profile }: { profile: Profile }) {
           </ul>
           <div className="row">
             <button className="btn small ghost" onClick={cycleView}>
-              📷 {viewMode === "chase" ? "뒤에서" : viewMode === "front" ? "앞에서" : "위에서"}
+              📷<span className="lbl"> {viewMode === "chase" ? "뒤에서" : viewMode === "front" ? "앞에서" : "위에서"}</span>
             </button>
             <button className="btn small" onClick={exit} disabled={saving}>
-              {saving ? "저장 중…" : "🏁 그만 타기"}
+              {saving ? "저장 중…" : <>🏁<span className="lbl"> 그만 타기</span></>}
             </button>
           </div>
         </div>
+      </div>
+
+      {/* 묘기 알림 */}
+      <div className="toasts">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast ${t.kind}`}>{t.text}</div>
+        ))}
+      </div>
+      {hud.boost && <div className="boost-fx" />}
+
+      {/* 묘기 버튼 */}
+      <div className={hud.air ? "tricks air" : "tricks"}>
+        {TRICKS.map((tr) => (
+          <button
+            key={tr.id}
+            className="btn trick"
+            aria-label={tr.name}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              queueTrick(tr.id);
+            }}
+          >
+            <span className="e-ico">{tr.icon}</span>
+            <span className="e-txt">{tr.name}</span> <kbd>{tr.key}</kbd>
+          </button>
+        ))}
       </div>
 
       {/* 감정표현 */}
@@ -275,7 +323,7 @@ function GameInner({ profile }: { profile: Profile }) {
         </div>
       </div>
 
-      <div className="help">W/↑ 페달 · S/↓ 브레이크 · A D/← → 방향 · Space 점프 · B 절 · H 인사 · C 만세 · V 카메라 · Enter 채팅</div>
+      <div className="help">W/↑ 페달 · S/↓ 브레이크 · A D/← → 방향 · Space 점프 · 공중에서 Q 백플립 · F 프론트플립 · E 스핀 · G 슈퍼맨 · R 노핸드 · B 절 · H 인사 · C 만세 · V 카메라 · Enter 채팅</div>
     </div>
   );
 }

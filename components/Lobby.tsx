@@ -27,22 +27,24 @@ export default function Lobby() {
   const router = useRouter();
   const [p, setP] = useState<Profile>(DEFAULT_PROFILE);
   const [board, setBoard] = useState<RideRecord[] | null>(null);
+  const [tab, setTab] = useState<"distance" | "trick_score">("distance");
   const [error, setError] = useState("");
   const anim = useMemo(() => newAnim(), []);
 
   useEffect(() => {
     const saved = loadProfile();
     if (saved) setP(saved);
-    supabase
-      .from("bike_rides")
-      .select("*")
-      .order("distance", { ascending: false })
-      .limit(10)
-      .then(({ data, error }) => {
-        if (error) setBoard([]);
-        else setBoard((data as RideRecord[]) ?? []);
-      });
   }, []);
+
+  useEffect(() => {
+    setBoard(null);
+    let q = supabase.from("bike_rides").select("*").order(tab, { ascending: false }).limit(10);
+    if (tab === "trick_score") q = q.gt("trick_score", 0);
+    q.then(({ data, error }) => {
+      if (error) setBoard([]);
+      else setBoard((data as RideRecord[]) ?? []);
+    });
+  }, [tab]);
 
   const set = (patch: Partial<Profile>) => setP((old) => ({ ...old, ...patch }));
   const bike = getBike(p.bike);
@@ -153,7 +155,11 @@ export default function Lobby() {
         </div>
 
         <div className="card">
-          <h2>🏆 최장 거리 랭킹</h2>
+          <h2>🏆 랭킹</h2>
+          <div className="chips tabs">
+            <button className={tab === "distance" ? "chip on" : "chip"} onClick={() => setTab("distance")}>🚴 최장 거리</button>
+            <button className={tab === "trick_score" ? "chip on" : "chip"} onClick={() => setTab("trick_score")}>🤸 묘기 점수</button>
+          </div>
           {board === null ? (
             <p className="muted">불러오는 중…</p>
           ) : board.length === 0 ? (
@@ -164,8 +170,17 @@ export default function Lobby() {
                 <li key={r.id}>
                   <span className="rank">{["🥇", "🥈", "🥉"][i] ?? i + 1}</span>
                   <span className="name">{getBike(r.bike).emoji} {r.nickname}</span>
-                  <span className="dist">{r.distance >= 1000 ? `${(r.distance / 1000).toFixed(2)}km` : `${r.distance}m`}</span>
-                  <span className="muted">⭐{r.stars}</span>
+                  {tab === "distance" ? (
+                    <>
+                      <span className="dist">{r.distance >= 1000 ? `${(r.distance / 1000).toFixed(2)}km` : `${r.distance}m`}</span>
+                      <span className="muted">⭐{r.stars}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="dist">{(r.trick_score ?? 0).toLocaleString()}점</span>
+                      <span className="muted">⭐{r.stars}</span>
+                    </>
+                  )}
                 </li>
               ))}
             </ol>
@@ -175,8 +190,10 @@ export default function Lobby() {
             <li><kbd>W</kbd>/<kbd>↑</kbd> 페달 · <kbd>S</kbd>/<kbd>↓</kbd> 브레이크</li>
             <li><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> 방향 · <kbd>Space</kbd> 점프</li>
             <li><kbd>B</kbd> 절하기 · <kbd>H</kbd> 인사 · <kbd>C</kbd> 만세</li>
+            <li>공중에서 묘기: <kbd>Q</kbd> 백플립 · <kbd>F</kbd> 프론트플립 · <kbd>E</kbd> 360 · <kbd>G</kbd> 슈퍼맨 · <kbd>R</kbd> 노핸드</li>
+            <li>묘기를 이어 쓰면 콤보 배율! 다 못 돌고 착지하면 꽈당 💥</li>
             <li><kbd>V</kbd> 카메라 전환 · <kbd>Enter</kbd> 채팅</li>
-            <li>⭐ 별을 모으고 점프대에서 날아보세요!</li>
+            <li>🛹 스케이트파크 · 🌈 무지개 다리 · 🎡 관람차 · 🚀 부스터 · 💫 공중 링을 찾아보세요!</li>
           </ul>
         </div>
       </section>

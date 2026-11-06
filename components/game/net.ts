@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase, type ChatMsg } from "@/lib/supabase";
-import type { EmoteId, Profile } from "@/lib/profile";
+import type { EmoteId, Profile, TrickId } from "@/lib/profile";
 import { newAnim, now, type AnimState } from "../three/anim";
 
 export interface NetPlayer extends Profile {
@@ -105,6 +105,18 @@ export function useNet(profile: Profile, myId: string) {
       r.anim.emoteAt = now();
     });
 
+    ch.on("broadcast", { event: "trick" }, ({ payload }) => {
+      const p = payload as { id: string; trick: TrickId | "crash" };
+      const r = ensure(p.id);
+      if (p.trick === "crash") {
+        r.anim.crashAt = now();
+        r.anim.trick = null;
+      } else {
+        r.anim.trick = p.trick;
+        r.anim.trickAt = now();
+      }
+    });
+
     ch.on("broadcast", { event: "bubble" }, ({ payload }) => {
       const p = payload as { id: string; text: string };
       showBubble(p.id, p.text);
@@ -161,6 +173,11 @@ export function useNet(profile: Profile, myId: string) {
     chRef.current.send({ type: "broadcast", event: "emote", payload: { id: myId, emote } });
   }, [myId]);
 
+  const sendTrick = useCallback((trick: TrickId | "crash") => {
+    if (!ready.current || !chRef.current) return;
+    chRef.current.send({ type: "broadcast", event: "trick", payload: { id: myId, trick } });
+  }, [myId]);
+
   const sendChat = useCallback(async (text: string) => {
     const message = text.trim().slice(0, 200);
     if (!message) return;
@@ -176,5 +193,5 @@ export function useNet(profile: Profile, myId: string) {
     });
   }, [myId, profile, showBubble]);
 
-  return { remotes, players, messages, bubbles, connected, sendMove, sendEmote, sendChat };
+  return { remotes, players, messages, bubbles, connected, sendMove, sendEmote, sendTrick, sendChat };
 }

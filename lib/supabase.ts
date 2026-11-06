@@ -27,5 +27,6 @@ export interface RideRecord {
   bike: string;
   distance: number;
   stars: number;
+  trick_score: number;
   created_at: string;
 }

@@ -1,5 +1,14 @@
+import type { TrickId } from "@/lib/profile";
+
 // 키보드 + 터치 입력 공유 상태
 export const input = { f: false, b: false, l: false, r: false, jump: false };
+/** 다음 프레임에 시도할 묘기 */
+export const trickQueue: { id: TrickId | null; at: number } = { id: null, at: 0 };
+
+export function queueTrick(id: TrickId) {
+  trickQueue.id = id;
+  trickQueue.at = performance.now() / 1000;
+}
 
 const MAP: Record<string, keyof typeof input> = {
   KeyW: "f", ArrowUp: "f",

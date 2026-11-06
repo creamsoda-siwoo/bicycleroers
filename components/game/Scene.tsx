@@ -4,20 +4,29 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { getBike } from "@/lib/bikes";
-import { EMOTE_DUR, type Profile } from "@/lib/profile";
+import { EMOTE_DUR, TRICK_MAP, type Profile, type TrickId } from "@/lib/profile";
 import {
-  PLAZA_RADIUS, SPAWN, TRACK_RADIUS, TRACK_WIDTH, groundHeight, randomStarPos, resolveCollisions,
+  BOOSTS, HOOPS, PLAZA_RADIUS, SKATE, SPAWN, TRACK_RADIUS, TRACK_WIDTH, groundHeight, inPond, randomStarPos, resolveCollisions,
 } from "@/lib/world";
+import { hoopFlash } from "../three/Landmarks";
 import { Rider } from "../three/Rider";
 import { stars } from "../three/World";
-import { now, type AnimState } from "../three/anim";
-import { input } from "./input";
+import { CRASH_DUR, now, type AnimState } from "../three/anim";
+import { input, trickQueue } from "./input";
 import type { Bubble, MovePayload, NetPlayer, Remote } from "./net";
 
-export const stats = { speed: 0, dist: 0, stars: 0, x: 0, z: 0 };
+export const stats = { speed: 0, dist: 0, stars: 0, x: 0, z: 0, trickScore: 0, airborne: false, boosting: false };
+
+/** 화면 가운데 띄울 알림 (묘기 점수 등) */
+export const popups: { text: string; kind: "trick" | "crash" | "bonus" }[] = [];
+
+/** 자전거별 묘기 점수 배율 */
+const TRICK_MULT: Record<string, number> = {
+  bmx: 1.5, mtb: 1.2, unicycle: 2, tricycle: 2, tandem: 1.8, cruiser: 1.3,
+};
 export const view = { mode: "chase" as "chase" | "front" | "top" };
 
-const GRAVITY = 22;
+const GRAVITY = 18;
 
 function slopePitch(x: number, z: number, h: number) {
   const fx = Math.sin(h) * 0.5;
@@ -31,6 +40,7 @@ function onPavement(x: number, z: number) {
   const d = Math.hypot(x, z);
   if (Math.abs(d - TRACK_RADIUS) < TRACK_WIDTH / 2) return true;
   if (d < PLAZA_RADIUS) return true;
+  if (Math.hypot(x - SKATE.x, z - SKATE.z) < SKATE.r) return true;
   if ((Math.abs(x) < 2 || Math.abs(z) < 2) && d < TRACK_RADIUS) return true;
   return false;
 }
@@ -41,8 +51,10 @@ export function Player({
   myId,
   bubble,
   sendMove,
+  sendTrick,
   lowPower,
 }: {
+  sendTrick: (t: TrickId | "crash") => void;
   profile: Profile;
   anim: AnimState;
   myId: string;
@@ -66,11 +78,22 @@ export function Player({
     pitch: 0,
     lastSend: 0,
     lastSig: "",
+    boostUntil: 0,
+    stunUntil: 0,
+    airStart: 0,
+    combo: [] as TrickId[],
+    hoopAt: HOOPS.map(() => -10),
   });
   const lookAt = useRef(new THREE.Vector3());
   const tmp = useRef(new THREE.Vector3()).current;
 
   useEffect(() => {
+    // 테스트용: ?debug 로 열면 window.__teleport(x, z, heading) 사용 가능
+    if (typeof window !== "undefined" && window.location.search.includes("debug")) {
+      (window as unknown as Record<string, unknown>).__teleport = (x: number, z: number, h = 0) => {
+        Object.assign(st.current, { x, z, h, y: groundHeight(x, z), speed: 0, vy: 0, grounded: true });
+      };
+    }
     if (light.current) scene.add(light.current.target);
     camera.position.set(st.current.x - 8, 4, st.current.z);
   }, [camera, scene]);
@@ -79,12 +102,29 @@ export function Player({
     const dt = Math.min(dtRaw, 0.05);
     const s = st.current;
     const t = now();
-    const bowing = anim.emote === "bow" && t - anim.emoteAt < EMOTE_DUR.bow;
+    const stunned = t < s.stunUntil;
+    const bowing = (anim.emote === "bow" && t - anim.emoteAt < EMOTE_DUR.bow) || stunned;
+
+    // ── 부스터 ──
+    if (s.grounded) {
+      for (const b of BOOSTS) {
+        if (Math.hypot(b.x - s.x, b.z - s.z) < 2.2 && t > s.boostUntil - 1.2) {
+          s.boostUntil = t + 1.6;
+          s.speed = Math.max(s.speed, spec.maxSpeed * 1.4);
+          popups.push({ text: "🚀 부스터!", kind: "bonus" });
+        }
+      }
+    }
+    const boosting = t < s.boostUntil;
 
     // ── 속도 ──
     const paved = onPavement(s.x, s.z);
-    const cap = spec.maxSpeed * (paved || spec.id === "mtb" ? 1 : 0.72);
-    if (!bowing && input.f) s.speed += spec.accel * dt;
+    const wet = inPond(s.x, s.z) && s.y < 0.2;
+    anim.wet = wet;
+    let cap = spec.maxSpeed * (paved || spec.id === "mtb" ? 1 : 0.72);
+    if (boosting) cap = spec.maxSpeed * 1.6;
+    if (wet) cap = 2.5;
+    if (!bowing && input.f) s.speed += spec.accel * dt * (boosting ? 2 : 1);
     else if (!bowing && input.b) s.speed -= (s.speed > 0 ? spec.accel * 1.8 : spec.accel * 0.5) * dt;
     else s.speed -= s.speed * (s.grounded ? 0.9 : 0.1) * dt;
     if (bowing) s.speed *= Math.max(0, 1 - 5 * dt);
@@ -109,10 +149,10 @@ export function Player({
       s.z = pz;
       s.speed *= -0.3;
     }
-    const want = Math.hypot(s.x - px, s.z - pz);
+    const moveWant = Math.hypot(s.x - px, s.z - pz);
     resolveCollisions(s, 0.55);
     const got = Math.hypot(s.x - px, s.z - pz);
-    if (want > 0.0001 && got < want * 0.6) s.speed *= 0.92;
+    if (moveWant > 0.0001 && got < moveWant * 0.6) s.speed *= 0.92;
 
     // ── 높이 / 점프 ──
     const g = groundHeight(s.x, s.z);
@@ -120,8 +160,11 @@ export function Player({
       if (input.jump && !bowing) {
         s.vy = spec.jump;
         s.grounded = false;
+        s.airStart = t;
       } else if (g < s.y - 0.08) {
         s.grounded = false; // 점프대 끝에서 날아오름 (경사 속도 유지)
+        if (s.vy > 0.5) s.vy += 2.5 + Math.abs(s.speed) * 0.25;
+        s.airStart = t;
       } else {
         s.vy = Math.min(12, (g - s.y) / Math.max(dt, 0.001));
         s.y = g;
@@ -134,8 +177,71 @@ export function Player({
         s.y = g;
         s.vy = 0;
         s.grounded = true;
+        // ── 착지 판정 ──
+        let crashed = false;
+        if (anim.trick) {
+          const p = (t - anim.trickAt) / TRICK_MAP[anim.trick].dur;
+          if (p < 0.82) crashed = true;
+          else s.combo.push(anim.trick);
+          anim.trick = null;
+        }
+        if (crashed) {
+          s.combo = [];
+          s.speed = 0;
+          s.stunUntil = t + CRASH_DUR;
+          anim.crashAt = t;
+          sendTrick("crash");
+          popups.push({ text: "💥 꽈당!", kind: "crash" });
+        } else if (s.combo.length > 0) {
+          const base = s.combo.reduce((a, id) => a + TRICK_MAP[id].pts, 0);
+          const air = Math.max(0, t - s.airStart);
+          const mult = s.combo.length * (TRICK_MULT[spec.id] ?? 1);
+          const pts = Math.round((base + air * 100) * mult);
+          stats.trickScore += pts;
+          const names = s.combo.map((id) => TRICK_MAP[id].name).join(" + ");
+          popups.push({
+            text: `${names}${s.combo.length > 1 ? ` 콤보 x${s.combo.length}` : ""}  +${pts}`,
+            kind: "trick",
+          });
+          s.combo = [];
+        }
       }
     }
+
+    // ── 묘기 시작 (공중에서만) ──
+    // 버튼을 조금 일찍 눌러도 0.4초 동안 기억했다가 공중에 뜨면 실행
+    const want = trickQueue.id;
+    if (want && !s.grounded && !stunned && !anim.trick && s.y - g > 0.35) {
+      trickQueue.id = null;
+      anim.trick = want;
+      anim.trickAt = t;
+      sendTrick(want);
+    } else if (want && t - trickQueue.at > 0.4) {
+      trickQueue.id = null;
+      if (s.grounded && !stunned) popups.push({ text: "점프해서 공중에서 묘기! (Space)", kind: "bonus" });
+    }
+    if (anim.trick) {
+      const p = (t - anim.trickAt) / TRICK_MAP[anim.trick].dur;
+      if (p >= 1) {
+        s.combo.push(anim.trick);
+        anim.trick = null;
+      }
+    }
+
+    // ── 공중 링 통과 ──
+    for (let i = 0; i < HOOPS.length; i++) {
+      const h = HOOPS[i];
+      if (t - s.hoopAt[i] < 3) continue;
+      if (Math.hypot(h.x - s.x, h.y - (s.y + 0.9), h.z - s.z) < h.r + 0.3) {
+        s.hoopAt[i] = t;
+        hoopFlash[i] = t;
+        stats.stars += 3;
+        stats.trickScore += 250;
+        popups.push({ text: "💫 링 통과! ⭐+3 +250", kind: "bonus" });
+      }
+    }
+    stats.airborne = !s.grounded;
+    stats.boosting = boosting;
 
     // ── 애니메이션 상태 ──
     anim.speed = s.speed;
@@ -170,7 +276,7 @@ export function Player({
     // ── 카메라 ──
     const sin = Math.sin(s.h);
     const cos = Math.cos(s.h);
-    const mode = bowing ? "front" : view.mode;
+    const mode = bowing && !stunned ? "front" : view.mode;
     let cx: number, cy: number, cz: number;
     if (mode === "front") {
       // 옆-앞에서 캐릭터 얼굴 보기 (로컬 x=2.6, z=4.2)
@@ -189,6 +295,12 @@ export function Player({
       cz = s.z - cos * back;
       cy = s.y + 2.8;
       tmp.set(s.x + sin * 2, s.y + 1.1, s.z + cos * 2);
+    }
+    const cam = camera as THREE.PerspectiveCamera;
+    const fov = boosting ? 72 : 60;
+    if (Math.abs(cam.fov - fov) > 0.1) {
+      cam.fov += (fov - cam.fov) * Math.min(1, 4 * dt);
+      cam.updateProjectionMatrix();
     }
     const k = 1 - Math.exp(-4 * dt);
     camera.position.x += (cx - camera.position.x) * k;

@@ -139,6 +139,24 @@ kbd {
 .badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 99px; background: #e63946; color: #fff; font-size: 11px; text-align: center; line-height: 18px; }
 .e-txt { margin-left: 4px; }
 
+/* 묘기 */
+.tricks { position: absolute; bottom: 14px; right: 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; transition: transform 0.15s; transform-origin: right bottom; }
+.btn.trick { background: #fff; color: var(--ink); box-shadow: 0 3px 0 #e5d5c5; white-space: nowrap; padding: 6px 10px; font-size: 13px; }
+.tricks.air .btn.trick { background: #ffd166; box-shadow: 0 3px 0 #e0a800; }
+.tricks.air { transform: scale(1.06); }
+.toasts { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; z-index: 30; }
+.toast {
+  font-family: "Jua", sans-serif; font-size: 28px; color: #fff; padding: 4px 18px; border-radius: 99px;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.25); white-space: nowrap; animation: toast 0.35s ease-out;
+  background: linear-gradient(90deg, #ff7b54, #ffb26b);
+}
+.toast.crash { background: linear-gradient(90deg, #e63946, #ff6b6b); }
+.toast.bonus { background: linear-gradient(90deg, #4361ee, #4cc9f0); font-size: 22px; }
+@keyframes toast { from { transform: scale(0.4) translateY(10px); opacity: 0; } 70% { transform: scale(1.12); } to { transform: scale(1); opacity: 1; } }
+.boost-fx { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 90px 30px rgba(76, 201, 240, 0.45); animation: boostpulse 0.4s infinite alternate; }
+@keyframes boostpulse { from { opacity: 0.6; } to { opacity: 1; } }
+
+
 .touch { display: none; }
 .tbtn {
   width: 64px; height: 64px; border-radius: 50%; border: none; font-size: 22px; color: var(--ink);
@@ -163,8 +181,10 @@ kbd {
   .panel { padding: 7px 10px; border-radius: 12px; }
   .stat .me-line { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46vw; }
   .stat .me-line .muted { display: none; }
-  .stat-grid { gap: 10px; }
-  .stat-grid .big { font-size: 20px; }
+  .stat-grid { gap: 9px; flex-wrap: nowrap; white-space: nowrap; }
+  .stat-grid .big { font-size: 18px; }
+  .online .lbl { display: none; }
+  .btn.small { white-space: nowrap; }
   .stat-grid small { font-size: 11px; }
   .online { min-width: 0; font-size: 12px; }
   .online ul { display: none; }
@@ -178,6 +198,14 @@ kbd {
   }
   .btn.emote { width: 46px; height: 46px; padding: 0; border-radius: 50%; font-size: 22px; }
   .btn.emote .e-txt, .btn.emote kbd { display: none; }
+
+  /* 묘기: 왼쪽 컨트롤 위 */
+  .tricks { left: calc(12px + env(safe-area-inset-left)); right: auto; bottom: calc(100px + env(safe-area-inset-bottom)); transform: none; gap: 6px; flex-direction: row; }
+  .tricks.air { transform: scale(1.08); transform-origin: left bottom; }
+  .btn.trick { width: 44px; height: 44px; padding: 0; border-radius: 50%; font-size: 20px; }
+  .btn.trick .e-txt, .btn.trick kbd { display: none; }
+  .toast { font-size: 20px; padding: 3px 12px; white-space: normal; text-align: center; max-width: 86vw; }
+  .toast.bonus { font-size: 16px; }
 
   /* 채팅: HUD 아래 작은 패널, 기본은 접힘 */
   .chat {
@@ -202,6 +230,10 @@ kbd {
   .tbtn.pedal { width: 72px; height: 72px; }
   .tbtn.jump { width: 54px; height: 54px; }
   .touch .col { gap: 6px; }
+  .tricks { left: 50%; transform: translateX(-50%); bottom: calc(66px + env(safe-area-inset-bottom)); }
+  .tricks.air { transform: translateX(-50%) scale(1.08); transform-origin: center bottom; }
+  .btn.trick { width: 40px; height: 40px; font-size: 18px; }
+  .toasts { top: 30%; }
 }
 
 /* 이름표 / 말풍선 (3D 위에 표시) */
@@ -223,3 +255,4 @@ kbd {
 @keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .label3d { position: absolute; top: 0; left: 0; pointer-events: none; transform-origin: 50% 100%; will-change: transform; }
 .label3d .tag-wrap { transform: none; transform-origin: 50% 100%; }
+.tabs { margin-bottom: 10px; }

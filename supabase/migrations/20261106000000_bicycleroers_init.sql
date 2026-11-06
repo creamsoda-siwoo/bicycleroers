@@ -28,3 +28,7 @@ create policy "bike_rides read" on public.bike_rides for select to anon, authent
 create policy "bike_rides insert" on public.bike_rides for insert to anon, authenticated with check (true);
 
 alter publication supabase_realtime add table public.bike_chat;
+
+-- 묘기 점수 (2번째 마이그레이션)
+alter table public.bike_rides add column if not exists trick_score integer not null default 0 check (trick_score between 0 and 10000000);
+create index if not exists bike_rides_trick_idx on public.bike_rides (trick_score desc);

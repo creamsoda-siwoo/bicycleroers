@@ -4,10 +4,10 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { BikeSpec } from "@/lib/bikes";
-import { EMOTE_DUR, type HatId, type Profile } from "@/lib/profile";
+import { EMOTE_DUR, TRICK_MAP, type HatId, type Profile } from "@/lib/profile";
 import { placeLimb } from "./Tube";
 import { crankAngle, crankLength } from "./Bike";
-import { now, type AnimState } from "./anim";
+import { CRASH_DUR, now, type AnimState } from "./anim";
 
 const SKIN = "#ffe3c8";
 const PANTS = "#3d405b";
@@ -206,6 +206,21 @@ export function Character({ spec, profile, anim }: { spec: BikeSpec; profile: Pr
     const env = active ? smooth(et / 0.45) * smooth((dur - et) / 0.45) : 0;
     const bowW = active && emote === "bow" ? env : 0;
 
+    // 묘기 자세
+    let noHandW = 0;
+    let supermanW = 0;
+    if (anim.trick) {
+      const td = TRICK_MAP[anim.trick].dur;
+      const tp = t - anim.trickAt;
+      if (tp >= 0 && tp < td) {
+        const w = smooth(tp / (td * 0.2)) * smooth((td - tp) / (td * 0.2));
+        if (anim.trick === "nohand") noHandW = w;
+        if (anim.trick === "superman") supermanW = w;
+      }
+    }
+    const crashT = t - anim.crashAt;
+    const crashW = crashT >= 0 && crashT < CRASH_DUR ? smooth(crashT / 0.2) * smooth((CRASH_DUR - crashT) / 0.3) : 0;
+
     // ── 라이딩 자세 ──
     const seatY = spec.seat[0];
     const seatZ = spec.seat[1];
@@ -224,6 +239,17 @@ export function Character({ spec, profile, anim }: { spec: BikeSpec; profile: Pr
     const bb = spec.bb;
     v.fR.set(0.13, bb[0] + L * Math.cos(ca), bb[1] + L * Math.sin(ca));
     v.fL.set(-0.13, bb[0] - L * Math.cos(ca), bb[1] - L * Math.sin(ca));
+
+    // ── 슈퍼맨: 몸을 뒤로 쭉 뻗기 ──
+    if (supermanW > 0) {
+      v.tmp.set(0, v.hip.y + 0.32, v.hip.z - 0.45);
+      v.hip.lerp(v.tmp, supermanW);
+      v.tmp.set(0.12, v.hip.y + 0.05, v.hip.z - 0.65);
+      v.fR.lerp(v.tmp, supermanW);
+      v.tmp.set(-0.12, v.hip.y + 0.05, v.hip.z - 0.65);
+      v.fL.lerp(v.tmp, supermanW);
+      pitch = pitch + (1.35 - pitch) * supermanW;
+    }
 
     // ── 큰절 자세 ──
     let bowPitch = 0.15;
@@ -267,6 +293,11 @@ export function Character({ spec, profile, anim }: { spec: BikeSpec; profile: Pr
     } else if (active && emote === "wave") {
       v.tmp.set(v.shR.x + 0.2 + Math.sin(et * 14) * 0.1, v.shR.y + 0.42, v.shR.z + 0.05);
       v.hR.lerp(v.tmp, env);
+    } else if (noHandW > 0 || crashW > 0) {
+      const w = Math.max(noHandW, crashW);
+      const j = Math.sin(time * 12) * 0.06 * crashW;
+      v.hR.lerp(v.tmp.set(v.shR.x + 0.16, v.shR.y + 0.45 + j, v.shR.z), w);
+      v.hL.lerp(v.tmp.set(v.shL.x - 0.16, v.shL.y + 0.45 - j, v.shL.z), w);
     } else if (active && emote === "cheer") {
       const j = Math.abs(Math.sin(et * 9)) * 0.08;
       v.hR.lerp(v.tmp.set(v.shR.x + 0.14, v.shR.y + 0.48 + j, v.shR.z), env);

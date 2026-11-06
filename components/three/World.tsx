@@ -3,6 +3,7 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { Landmarks } from "./Landmarks";
 import {
   HOUSES, PLAZA_RADIUS, RAMPS, STAR_COUNT, TRACK_RADIUS, TRACK_WIDTH, TREES,
   WORLD_SIZE, randomStarPos,
@@ -35,7 +36,18 @@ function Trees() {
             <cylinderGeometry args={[0.18, 0.25, 1.2, 8]} />
             <meshStandardMaterial color="#8d5524" />
           </mesh>
-          {t.kind === "pine" ? (
+          {t.kind === "blossom" ? (
+            <>
+              <mesh position={[0, 2.1, 0]} castShadow>
+                <icosahedronGeometry args={[1.25, 1]} />
+                <meshStandardMaterial color={["#ffafcc", "#ffc8dd", "#f7aef8"][Math.floor(t.scale * 10) % 3]} flatShading />
+              </mesh>
+              <mesh position={[0.7, 2.6, 0.3]} castShadow>
+                <icosahedronGeometry args={[0.7, 1]} />
+                <meshStandardMaterial color="#ffc8dd" flatShading />
+              </mesh>
+            </>
+          ) : t.kind === "pine" ? (
             <>
               <mesh position={[0, 1.8, 0]} castShadow>
                 <coneGeometry args={[1.2, 1.8, 8]} />
@@ -288,6 +300,7 @@ export function World() {
         </group>
       ))}
       <Trees />
+      <Landmarks />
       <Houses />
       <Fence />
       <Stars />
