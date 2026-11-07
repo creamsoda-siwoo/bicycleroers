@@ -1,8 +1,9 @@
 // 맵 선택과 공통 지형/충돌 함수
 import * as V from "./world";
 import * as S from "./snow";
+import * as D from "./desert";
 
-export type MapId = "village" | "snow";
+export type MapId = "village" | "snow" | "desert";
 
 export interface Gate {
   x: number;
@@ -116,7 +117,30 @@ const snow: MapDef = {
   lift: { x: S.LIFT.base.x, z: S.LIFT.base.z, r: 2.6, to: { ...S.LIFT.top, heading: S.LIFT.heading } },
 };
 
-export const MAPS: MapDef[] = [village, snow];
+const desert: MapDef = {
+  id: "desert",
+  name: "노을 사막 협곡",
+  emoji: "🏜️",
+  desc: "구불구불 협곡 랠리·협곡 점프·모래 언덕·오아시스",
+  size: D.DESERT_SIZE,
+  spawn: D.DESERT_SPAWN,
+  ramps: D.DESERT_RAMPS,
+  platforms: [],
+  obstacles: D.DESERT_OBSTACLES,
+  hoops: hoopsFrom(D.DESERT_RAMPS, D.desertTerrain),
+  boosts: [0.12, 0.35, 0.47, 0.7, 0.9].map((k) => {
+    const p = D.roadAt(D.ROAD_LENGTH * k);
+    return { x: p.x, z: p.z, heading: p.h };
+  }),
+  base: D.desertTerrain,
+  paved: (x, z) => D.onRoad(x, z) || Math.hypot(x - D.TOWN.x, z - D.TOWN.z) < 18,
+  water: D.inOasis,
+  ice: () => false,
+  course: { kind: "run", name: "협곡 랠리", gates: D.DESERT_GATES },
+  sky: { bg: "#f6bd8b", fog: [80, 260], hemi: ["#ffe5c2", "#c97b4a", 1.05], sun: 2.1, sunColor: "#ffd2a1" },
+};
+
+export const MAPS: MapDef[] = [village, snow, desert];
 let active: MapDef = village;
 
 /** 공중 링 반짝임 시간 (맵마다 초기화) */

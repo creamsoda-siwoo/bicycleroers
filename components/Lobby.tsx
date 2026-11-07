@@ -11,7 +11,7 @@ import { supabase, type RideRecord } from "@/lib/supabase";
 import { newAnim, now } from "./three/anim";
 import Garage from "./Garage";
 import { ensurePlayer, type PlayerData } from "@/lib/player";
-import { MAPS } from "@/lib/maps";
+import { MAP_INFO as MAPS } from "@/lib/mapInfo";
 
 const Preview = dynamic(() => import("./Preview"), {
   ssr: false,
@@ -203,7 +203,7 @@ export default function Lobby() {
           </div>
           {tab === "times" ? (
             <>
-              <p className="muted small-note">{MAPS.find((m) => m.id === mapId)?.emoji} {MAPS.find((m) => m.id === mapId)?.name} · {MAPS.find((m) => m.id === mapId)?.course.name}</p>
+              <p className="muted small-note">{MAPS.find((m) => m.id === mapId)?.emoji} {MAPS.find((m) => m.id === mapId)?.name} · {MAPS.find((m) => m.id === mapId)?.course}</p>
               {times === null ? (
                 <p className="muted">불러오는 중…</p>
               ) : times.length === 0 ? (

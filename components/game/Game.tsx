@@ -152,6 +152,8 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
   const chatList = useRef<HTMLDivElement>(null);
   const lastChat = useRef(0);
   const [viewMode, setViewMode] = useState(view.mode);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [emoteOpen, setEmoteOpen] = useState(false);
   const [walletBase, setWalletBase] = useState(wallet);
   // 마지막으로 서버에 저장한 시점의 누적값
   const saved = useRef({ dist: 0, stars: 0, trick: 0 });
@@ -330,8 +332,51 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
     onPointerCancel: () => (input[k] = false),
   });
 
+  const chatPanel = (
+      <div className={chatOpen ? "chat panel" : "chat panel closed"}>
+        <button className="chat-toggle" onClick={() => setChatOpen((o) => !o)}>
+          💬 채팅 {chatOpen ? "▾" : "▴"}
+          {!chatOpen && unread > 0 && <span className="badge">{unread > 9 ? "9+" : unread}</span>}
+        </button>
+        {chatOpen && (
+          <>
+            <div className="chat-list" ref={chatList}>
+              {net.messages.length === 0 && <div className="muted">첫 인사를 남겨보세요! 👋</div>}
+              {net.messages.map((m) => (
+                <div key={m.id} className="chat-msg">
+                  <span className="dot" style={{ background: m.color }} />
+                  <b>{getBike(m.bike).emoji} {m.nickname}</b> <span>{m.message}</span>
+                </div>
+              ))}
+            </div>
+            <form
+              className="chat-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void send();
+              }}
+            >
+              <input
+                ref={chatInput}
+                value={text}
+                maxLength={200}
+                placeholder="메시지 입력 (Enter)"
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") (e.target as HTMLInputElement).blur();
+                }}
+              />
+              <button className="btn small" type="submit">보내기</button>
+            </form>
+          </>
+        )}
+      </div>
+  );
+
+  const walletNow = walletBase !== null ? walletBase + hud.stars - saved.current.stars : null;
+
   return (
-    <div className="game">
+    <div className={isTouch ? "game touch-ui" : "game"}>
       <Canvas
         shadows
         dpr={isTouch ? [1, 1.5] : [1, 2]}
@@ -349,7 +394,8 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         ))}
       </Canvas>
 
-      {/* 상단 HUD */}
+      {/* 상단 HUD (PC) */}
+      {!isTouch && (
       <div className="hud-top">
         <div className="panel stat">
           <div className="me-line">
@@ -401,20 +447,69 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
           </div>
         </div>
       </div>
+      )}
+
+      {/* 상단 HUD (휴대폰): 꼭 필요한 것만 */}
+      {isTouch && (
+        <>
+          <div className="m-stat">
+            <b>{Math.round(hud.speed * 3.6)}</b><small>km/h</small>
+            <span>⭐{hud.stars}</span>
+            {hud.trick > 0 && <span>🤸{hud.trick}</span>}
+          </div>
+          <div className="m-top-btns">
+            <button className="m-icon" aria-label="채팅" onClick={() => { setChatOpen((o) => !o); setMenuOpen(false); }}>
+              💬{!chatOpen && unread > 0 && <span className="badge">{unread > 9 ? "9+" : unread}</span>}
+            </button>
+            <button className="m-icon" aria-label="메뉴" onClick={() => { setMenuOpen((o) => !o); setChatOpen(false); }}>
+              {menuOpen ? "✕" : "☰"}
+            </button>
+          </div>
+          {menuOpen && (
+            <div className="m-sheet panel">
+              <div className="m-sheet-row">
+                <span className={net.connected ? "live on" : "live"} /> 접속 {net.players.length + 1}명
+                {walletNow !== null && <span className="wallet">보유 ⭐ <b>{walletNow}</b></span>}
+              </div>
+              <div className="m-players">
+                {[{ id: "me", nickname: profile.nickname, color: profile.color, bike: profile.bike }, ...net.players].slice(0, 12).map((p) => (
+                  <span key={p.id} className="m-player">
+                    <span className="dot" style={{ background: p.color }} />{getBike(p.bike).emoji} {p.nickname}
+                  </span>
+                ))}
+              </div>
+              <div className="m-sheet-btns">
+                <button className="btn small ghost" onClick={() => { setMuted(!muted); setMutedState(!muted); }}>
+                  {muted ? "🔇 소리 꺼짐" : "🔊 소리 켜짐"}
+                </button>
+                <button className="btn small ghost" onClick={cycleView}>
+                  📷 {viewMode === "chase" ? "뒤에서" : viewMode === "front" ? "앞에서" : "위에서"}
+                </button>
+                <button className="btn small" onClick={exit} disabled={saving}>
+                  {saving ? "저장 중…" : "🏁 그만 타기"}
+                </button>
+              </div>
+            </div>
+          )}
+          {chatOpen && <div className="m-chat">{chatPanel}</div>}
+        </>
+      )}
 
       {/* 타임어택 */}
       {(hud.raceOn || hud.raceBest > 0) && (
         <div className={hud.raceOn ? "racebar on" : "racebar"}>
-          <span>⏱️ {map.course.name}</span>
+          <span className="race-name">⏱️ {map.course.name}</span>
           <b>{fmtTime(hud.raceT)}</b>
           {hud.raceOn && (
             <span className="muted">
-              {map.course.kind === "lap"
-                ? `체크포인트 ${hud.raceNext === 0 ? hud.raceTotal : hud.raceNext}/${hud.raceTotal}`
-                : `게이트 ${hud.raceNext}/${hud.raceTotal}`}
+              {isTouch
+                ? `${map.course.kind === "lap" && hud.raceNext === 0 ? hud.raceTotal : hud.raceNext}/${hud.raceTotal}`
+                : map.course.kind === "lap"
+                  ? `체크포인트 ${hud.raceNext === 0 ? hud.raceTotal : hud.raceNext}/${hud.raceTotal}`
+                  : `게이트 ${hud.raceNext}/${hud.raceTotal}`}
             </span>
           )}
-          {hud.raceBest > 0 && <span className="best">최고 {fmtTime(hud.raceBest)}</span>}
+          {hud.raceBest > 0 && !(isTouch && hud.raceOn) && <span className="best">최고 {fmtTime(hud.raceBest)}</span>}
         </div>
       )}
 
@@ -428,6 +523,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
       <div className="speedlines" style={{ opacity: Math.max(0, Math.min(0.9, (hud.speed - spec.maxSpeed * 0.75) / (spec.maxSpeed * 0.6))) }} />
 
       {/* 묘기 버튼 */}
+      {(!isTouch || hud.air) && (
       <div className={hud.air ? "tricks air" : "tricks"}>
         {TRICKS.map((tr) => (
           <button
@@ -444,60 +540,30 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
           </button>
         ))}
       </div>
+      )}
 
       {/* 감정표현 */}
-      <div className="emotes">
-        <button className="btn emote bell" onClick={ringBell} aria-label="따릉따릉">
+      {isTouch && (
+        <button className="m-emote-toggle" aria-label="감정표현" onClick={() => setEmoteOpen((o) => !o)}>
+          {emoteOpen ? "✕" : "😀"}
+        </button>
+      )}
+      {(!isTouch || emoteOpen) && (
+      <div className={isTouch ? "emotes m-emotes" : "emotes"}>
+        <button className="btn emote bell" onClick={() => { ringBell(); setEmoteOpen(false); }} aria-label="따릉따릉">
           <span className="e-ico">🔔</span>
           <span className="e-txt">따릉</span> <kbd>T</kbd>
         </button>
         {EMOTES.map((e) => (
-          <button key={e.id} className="btn emote" onClick={() => doEmote(e.id)} aria-label={e.label}>
+          <button key={e.id} className="btn emote" onClick={() => { doEmote(e.id); setEmoteOpen(false); }} aria-label={e.label}>
             <span className="e-ico">{e.label.split(" ")[0]}</span>
             <span className="e-txt">{e.label.split(" ")[1]}</span> <kbd>{e.key}</kbd>
           </button>
         ))}
       </div>
+      )}
 
-      {/* 채팅 */}
-      <div className={chatOpen ? "chat panel" : "chat panel closed"}>
-        <button className="chat-toggle" onClick={() => setChatOpen((o) => !o)}>
-          💬 채팅 {chatOpen ? "▾" : "▴"}
-          {!chatOpen && unread > 0 && <span className="badge">{unread > 9 ? "9+" : unread}</span>}
-        </button>
-        {chatOpen && (
-          <>
-            <div className="chat-list" ref={chatList}>
-              {net.messages.length === 0 && <div className="muted">첫 인사를 남겨보세요! 👋</div>}
-              {net.messages.map((m) => (
-                <div key={m.id} className="chat-msg">
-                  <span className="dot" style={{ background: m.color }} />
-                  <b>{getBike(m.bike).emoji} {m.nickname}</b> <span>{m.message}</span>
-                </div>
-              ))}
-            </div>
-            <form
-              className="chat-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void send();
-              }}
-            >
-              <input
-                ref={chatInput}
-                value={text}
-                maxLength={200}
-                placeholder="메시지 입력 (Enter)"
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") (e.target as HTMLInputElement).blur();
-                }}
-              />
-              <button className="btn small" type="submit">보내기</button>
-            </form>
-          </>
-        )}
-      </div>
+      {!isTouch && chatPanel}
 
       {/* 모바일 컨트롤: 왼손 방향, 오른손 페달/브레이크/점프 */}
       <div className="touch touch-left">
@@ -511,7 +577,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         </div>
       </div>
 
-      <div className="help">W/↑ 페달 · S/↓ 브레이크 · A D 방향 · S+방향 드리프트 · Space 점프 → 공중에서 묘기 · T 따릉 · V 카메라 · Enter 채팅 · 🎮 게임패드 OK</div>
+      {!isTouch && <div className="help">W/↑ 페달 · S/↓ 브레이크 · A D 방향 · S+방향 드리프트 · Space 점프 → 공중에서 묘기 · T 따릉 · V 카메라 · Enter 채팅 · 🎮 게임패드 OK</div>}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from "@/lib/world";
 import { getMap, groundHeight, randomStarPos } from "@/lib/maps";
 import { SnowWorld } from "./SnowWorld";
+import { DesertWorld } from "./DesertWorld";
 import { CourseGates, Hoops } from "./Common";
 import { Skids } from "./Skids";
 
@@ -304,8 +305,8 @@ export function World() {
       <Stars />
       <Hoops />
       <CourseGates />
-      <Skids dark={map.id === "snow" ? "#7d93ad" : "#2b2b2b"} />
-      {map.id === "snow" ? <SnowWorld /> : <VillageWorld />}
+      <Skids dark={map.id === "snow" ? "#7d93ad" : map.id === "desert" ? "#7a4b2a" : "#2b2b2b"} />
+      {map.id === "snow" ? <SnowWorld /> : map.id === "desert" ? <DesertWorld /> : <VillageWorld />}
     </group>
   );
 }

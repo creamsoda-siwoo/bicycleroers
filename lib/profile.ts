@@ -12,7 +12,7 @@ export interface Profile {
   /** 장착한 꾸미기 아이템 */
   equip?: Equipped;
   /** 선택한 맵 */
-  map?: "village" | "snow";
+  map?: "village" | "snow" | "desert";
 }
 
 export const COLORS = [

@@ -102,9 +102,20 @@ export function Player({
 
   useEffect(() => {
     // 테스트용: ?debug 로 열면 window.__teleport(x, z, heading) 사용 가능
-    if (typeof window !== "undefined" && window.location.search.includes("debug")) {
+    if (
+      typeof window !== "undefined" &&
+      window.location.search.includes("debug") &&
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ) {
       (window as unknown as Record<string, unknown>).__teleport = (x: number, z: number, h = 0) => {
         Object.assign(st.current, { x, z, h, y: groundHeight(x, z), speed: 0, vy: 0, vx: 0, vz: 0, grounded: true });
+      };
+      // 코스 게이트 i 로 이동 (테스트용)
+      (window as unknown as Record<string, unknown>).__gate = (i: number, back = 0) => {
+        const g = getMap().course.gates[i];
+        const x = g.x - Math.sin(g.heading) * back;
+        const z = g.z - Math.cos(g.heading) * back;
+        Object.assign(st.current, { x, z, h: g.heading, y: groundHeight(x, z), speed: 0, vy: 0, vx: 0, vz: 0, grounded: true });
       };
     }
     if (light.current) scene.add(light.current.target);
@@ -449,7 +460,7 @@ export function Player({
     const g2 = course.gates[race.next];
     if (course.kind === "run" && race.running && g2 && race.next > 0) {
       const ahead = (s.x - g2.x) * Math.sin(g2.heading) + (s.z - g2.z) * Math.cos(g2.heading);
-      if (ahead > 2) {
+      if (ahead > 2 && Math.hypot(s.x - g2.x, s.z - g2.z) < 25) {
         race.start -= 2;
         race.next += 1;
         popups.push({ text: "🚩 게이트 놓침! +2초", kind: "crash" });
