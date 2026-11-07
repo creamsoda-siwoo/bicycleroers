@@ -4,7 +4,7 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import {
-  BOOSTS, BRIDGE, FERRIS, LAMPS, PLATFORMS, POND, SKATE, SPAWN, TRACK_RADIUS, TRACK_WIDTH, WINDMILLS,
+  BOOSTS, BRIDGE, FERRIS, LAMPS, PLATFORMS, POND, SKATE, TRACK_RADIUS, TRACK_WIDTH, WINDMILLS,
 } from "@/lib/world";
 
 const RAINBOW = ["#ff595e", "#ff924c", "#ffca3a", "#8ac926", "#1982c4", "#4267ac", "#6a4c93"];
@@ -54,11 +54,11 @@ function Boosts() {
 }
 
 function StartLine() {
-  const a = Math.atan2(SPAWN.z, SPAWN.x);
+  const a = -Math.PI / 2; // 출발선(첫 게이트) 위치
   const n = 12;
   const w = TRACK_WIDTH / n;
-  const px = Math.cos(a) * TRACK_RADIUS + Math.sin(a) * 3;
-  const pz = Math.sin(a) * TRACK_RADIUS - Math.cos(a) * 3;
+  const px = Math.cos(a) * TRACK_RADIUS;
+  const pz = Math.sin(a) * TRACK_RADIUS;
   // 로컬 x = 트랙 가로(반지름 방향), 로컬 z = 진행 방향
   return (
     <group position={[px, 0, pz]} rotation={[0, -a, 0]}>
