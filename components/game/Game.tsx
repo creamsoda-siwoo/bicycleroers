@@ -254,12 +254,17 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
   const [dmOpen, setDmOpen] = useState(false);
   const [dmTarget, setDmTarget] = useState<{ pid: string; nickname: string } | null>(null);
   const [dmUnread, setDmUnread] = useState(0);
+  // 서버에 1:1 대화 기능이 준비됐는지 (없으면 버튼 숨김)
+  const [dmReady, setDmReady] = useState(false);
   const [dmBump, setDmBump] = useState(0);
   const refreshUnread = useCallback(() => {
     if (!profile.pid) return;
     dmThreads()
-      .then((t) => setDmUnread(t.reduce((a, x) => a + Number(x.unread || 0), 0)))
-      .catch(() => {});
+      .then((t) => {
+        setDmReady(true);
+        setDmUnread(t.reduce((a, x) => a + Number(x.unread || 0), 0));
+      })
+      .catch(() => setDmReady(false));
   }, [profile.pid]);
   const dmNotify = useDMNotify(profile.pid, (from, fromName) => {
     setDmBump((n) => n + 1);
@@ -853,9 +858,11 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
               🏁 다 같이 레이스
             </button>
             <button className="btn small ghost" onClick={() => setMenuOpen((o) => !o)}>🗺️ 맵</button>
-            <button className="btn small ghost" onClick={() => (dmOpen ? setDmOpen(false) : openDM(null))}>
-              📨{dmUnread > 0 && <span className="badge">{dmUnread}</span>}
-            </button>
+            {dmReady && (
+              <button className="btn small ghost" onClick={() => (dmOpen ? setDmOpen(false) : openDM(null))}>
+                📨{dmUnread > 0 && <span className="badge">{dmUnread}</span>}
+              </button>
+            )}
           </div>
           {menuOpen && !isTouch && <div className="desk-map">{mapPicker}</div>}
           <div className="row">
@@ -879,9 +886,11 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
             <button className="m-icon" aria-label="채팅" onClick={() => { setChatOpen((o) => !o); setMenuOpen(false); }}>
               💬{!chatOpen && unread > 0 && <span className="badge">{unread > 9 ? "9+" : unread}</span>}
             </button>
-            <button className="m-icon" aria-label="1:1 대화함" onClick={() => (dmOpen ? setDmOpen(false) : openDM(null))}>
-              📨{dmUnread > 0 && <span className="badge">{dmUnread > 9 ? "9+" : dmUnread}</span>}
-            </button>
+            {dmReady && (
+              <button className="m-icon" aria-label="1:1 대화함" onClick={() => (dmOpen ? setDmOpen(false) : openDM(null))}>
+                📨{dmUnread > 0 && <span className="badge">{dmUnread > 9 ? "9+" : dmUnread}</span>}
+              </button>
+            )}
             <button className="m-icon" aria-label="메뉴" onClick={() => { setMenuOpen((o) => !o); setChatOpen(false); setDmOpen(false); }}>
               {menuOpen ? "✕" : "☰"}
             </button>
@@ -957,7 +966,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         </div>
       )}
 
-      {dmOpen && profile.pid && (
+      {dmOpen && dmReady && profile.pid && (
         <DMPanel myPid={profile.pid} myName={profile.nickname} target={dmTarget} onClose={() => { setDmOpen(false); refreshUnread(); }} notify={dmNotify} bump={dmBump} />
       )}
 
@@ -978,7 +987,9 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
             </div>
             <div className="interact-btns">
               <button className="btn small ghost" onClick={() => poke(tp.id, "wave")}>👋 인사</button>
-              <button className="btn small ghost" disabled={!tp.pid || !profile.pid} onClick={() => tp.pid && openDM({ pid: tp.pid, nickname: tp.nickname })}>💬 1:1 대화</button>
+              {dmReady && (
+                <button className="btn small ghost" disabled={!tp.pid || !profile.pid} onClick={() => tp.pid && openDM({ pid: tp.pid, nickname: tp.nickname })}>💬 1:1 대화</button>
+              )}
               <button className="btn small ghost" disabled={!near} onClick={() => poke(tp.id, "hf_req")} title={near ? "" : "12m 안으로 가까이 가야 해요"}>
                 🖐️ 하이파이브{!near && " (가까이!)"}
               </button>
