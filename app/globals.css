@@ -517,3 +517,23 @@ button.m-player:disabled { opacity: 0.7; }
 .map-pick-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .map-pick-row .chip { font-size: 12px; padding: 6px 10px; }
 .desk-map { margin: 6px 0; }
+
+/* 1:1 대화 */
+.dm { position: absolute; right: 12px; top: 200px; width: min(92vw, 340px); z-index: 48; display: flex; flex-direction: column; gap: 8px; font-size: 13px; animation: pop 0.2s ease-out; }
+.dm-head { display: flex; align-items: center; gap: 8px; }
+.dm-head .x { margin-left: auto; border: none; background: none; font-size: 16px; }
+.dm-list { height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 2px; }
+.dm-msg { align-self: flex-start; max-width: 80%; display: flex; flex-direction: column; gap: 2px; }
+.dm-msg .bubble-txt { background: #fff; border: 1px solid var(--line); padding: 6px 10px; border-radius: 12px 12px 12px 4px; word-break: break-all; }
+.dm-msg.me { align-self: flex-end; align-items: flex-end; }
+.dm-msg.me .bubble-txt { background: var(--accent); color: #fff; border-color: var(--accent); border-radius: 12px 12px 4px 12px; }
+.dm-msg small { color: var(--muted); font-size: 10px; }
+.dm-threads { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; }
+.dm-thread { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 0 8px; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 8px 10px; position: relative; }
+.dm-thread .muted { grid-column: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-thread small { grid-column: 2; grid-row: 1; color: var(--muted); }
+.dm-thread .badge { grid-column: 2; grid-row: 2; justify-self: end; }
+.dm-err { color: #e63946; font-size: 12px; }
+.dm .chat-form input { font-size: 16px; }
+.touch-ui .dm { top: calc(60px + env(safe-area-inset-top)); right: 8px; left: 8px; width: auto; }
+.touch-ui .dm-list { height: 180px; }

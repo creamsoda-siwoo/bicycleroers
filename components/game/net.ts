@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase, type ChatMsg } from "@/lib/supabase";
 import { cleanBikeName, type EmoteId, type Profile, type TrickId } from "@/lib/profile";
+import { cleanText } from "@/lib/filter";
 import { newAnim, now, type AnimState } from "../three/anim";
 
 export interface NetPlayer extends Profile {
@@ -102,8 +103,8 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
         if (key === myId || !metas[0]) continue;
         const m = metas[0];
         list.push({
-          id: key, nickname: m.nickname, color: m.color, hat: m.hat, bike: m.bike, equip: m.equip ?? {},
-          bikeName: m.bikeName ? cleanBikeName(String(m.bikeName)) : undefined,
+          id: key, nickname: cleanText(String(m.nickname ?? "")), color: m.color, hat: m.hat, bike: m.bike, equip: m.equip ?? {},
+          bikeName: m.bikeName ? cleanText(cleanBikeName(String(m.bikeName))) : undefined,
           pid: typeof m.pid === "string" ? m.pid : undefined,
         });
         ensure(key);
@@ -167,14 +168,15 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
 
     ch.on("broadcast", { event: "bubble" }, ({ payload }) => {
       const p = payload as { id: string; text: string };
-      showBubble(p.id, p.text);
+      showBubble(p.id, cleanText(String(p.text ?? "")));
     });
 
     ch.on(
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "bike_chat" },
       (payload) => {
-        const m = payload.new as ChatMsg;
+        const raw = payload.new as ChatMsg;
+        const m = { ...raw, nickname: cleanText(raw.nickname), message: cleanText(raw.message) };
         setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev.slice(-59), m]));
       },
     );
@@ -197,7 +199,7 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
       .limit(40)
       .then(({ data }) => {
         if (data) setMessages((prev) => {
-          const old = (data as ChatMsg[]).reverse();
+          const old = (data as ChatMsg[]).reverse().map((m) => ({ ...m, nickname: cleanText(m.nickname), message: cleanText(m.message) }));
           const ids = new Set(old.map((m) => m.id));
           return [...old, ...prev.filter((m) => !ids.has(m.id))];
         });
@@ -243,7 +245,7 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
   }, []);
 
   const sendChat = useCallback(async (text: string) => {
-    const message = text.trim().slice(0, 200);
+    const message = cleanText(text.trim().slice(0, 200));
     if (!message) return;
     showBubble(myId, message);
     if (ready.current && chRef.current) {

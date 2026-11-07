@@ -1,5 +1,6 @@
 import type { BikeId } from "./bikes";
 import type { Equipped } from "./shop";
+import { cleanText } from "./filter";
 
 export type HatId = "helmet" | "cap" | "bunny" | "beanie" | "crown" | "none";
 export type EmoteId = "bow" | "wave" | "cheer";
@@ -92,5 +93,6 @@ export function cleanBikeName(s: string) {
 
 /** 이름표에 쓸 표시 이름 */
 export function displayName(p: Pick<Profile, "nickname" | "bikeName">, emoji: string) {
-  return p.bikeName ? `${emoji} ${p.nickname} · 「${p.bikeName}」` : `${emoji} ${p.nickname}`;
+  const nick = cleanText(p.nickname);
+  return p.bikeName ? `${emoji} ${nick} · 「${cleanText(p.bikeName)}」` : `${emoji} ${nick}`;
 }

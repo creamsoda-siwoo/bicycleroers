@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ITEMS, SLOTS, type Slot } from "@/lib/shop";
 import { buyItem, equipItem, exportCode, importCode, loginAccount, setAccount, type PlayerData } from "@/lib/player";
 import { sfx, unlockAudio } from "@/lib/sound";
+import { hasBanned } from "@/lib/filter";
 
 function fmtDist(m: number) {
   return m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`;
@@ -123,7 +124,11 @@ export default function Garage({
               <button
                 className="btn small"
                 disabled={busy === "acc"}
-                onClick={() => act("acc", () => setAccount(accName, accPass), "🔐 기록 지키기 완료! 이름과 비밀번호를 꼭 기억하세요")}
+                onClick={() =>
+                  hasBanned(accName)
+                    ? setMsg("😢 이름에 쓸 수 없는 말이 들어 있어요")
+                    : act("acc", () => setAccount(accName, accPass), "🔐 기록 지키기 완료! 이름과 비밀번호를 꼭 기억하세요")
+                }
               >
                 지키기
               </button>

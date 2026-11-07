@@ -16,6 +16,9 @@ import { getMap, setMap } from "@/lib/maps";
 import { isMuted, setMuted, sfx, unlockAudio } from "@/lib/sound";
 import { controls, disableTilt, enableTilt, loadControls, recenterTilt, saveControls } from "@/lib/settings";
 import type { Remote } from "./net";
+import DMPanel, { useDMNotify } from "./DMPanel";
+import { dmThreads } from "@/lib/dm";
+import { cleanText } from "@/lib/filter";
 import { axis, bindKeyboard, input, queueTrick } from "./input";
 import { useNet } from "./net";
 
@@ -247,6 +250,37 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
   );
   const { sendRace, sendPoke } = net;
 
+  // ── 💬 1:1 대화 ──
+  const [dmOpen, setDmOpen] = useState(false);
+  const [dmTarget, setDmTarget] = useState<{ pid: string; nickname: string } | null>(null);
+  const [dmUnread, setDmUnread] = useState(0);
+  const [dmBump, setDmBump] = useState(0);
+  const refreshUnread = useCallback(() => {
+    if (!profile.pid) return;
+    dmThreads()
+      .then((t) => setDmUnread(t.reduce((a, x) => a + Number(x.unread || 0), 0)))
+      .catch(() => {});
+  }, [profile.pid]);
+  const dmNotify = useDMNotify(profile.pid, (from, fromName) => {
+    setDmBump((n) => n + 1);
+    refreshUnread();
+    popups.push({ text: `📨 ${fromName}님의 1:1 메시지`, kind: "bonus" });
+    sfx("bell", 0.6);
+    void from;
+  });
+  useEffect(() => {
+    refreshUnread();
+    const id = setInterval(refreshUnread, 30000);
+    return () => clearInterval(id);
+  }, [refreshUnread]);
+  const openDM = (target: { pid: string; nickname: string } | null) => {
+    setDmTarget(target);
+    setDmOpen(true);
+    setMenuOpen(false);
+    setSelected(null);
+    setChatOpen(false);
+  };
+
   // ── 🤝 상호작용 ──
   const [selected, setSelected] = useState<string | null>(null);
   const [hfReq, setHfReq] = useState<{ from: string; name: string; at: number } | null>(null);
@@ -267,6 +301,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
   };
   const handlePoke = useRef<(p: import("./net").Poke) => void>(() => {});
   handlePoke.current = (p) => {
+    p = { ...p, fromName: cleanText(p.fromName) };
     if (p.kind === "wave") {
       pushToast(`👋 ${p.fromName}님이 인사했어요!`);
       sfx("checkpoint");
@@ -818,6 +853,9 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
               🏁 다 같이 레이스
             </button>
             <button className="btn small ghost" onClick={() => setMenuOpen((o) => !o)}>🗺️ 맵</button>
+            <button className="btn small ghost" onClick={() => (dmOpen ? setDmOpen(false) : openDM(null))}>
+              📨{dmUnread > 0 && <span className="badge">{dmUnread}</span>}
+            </button>
           </div>
           {menuOpen && !isTouch && <div className="desk-map">{mapPicker}</div>}
           <div className="row">
@@ -841,7 +879,10 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
             <button className="m-icon" aria-label="채팅" onClick={() => { setChatOpen((o) => !o); setMenuOpen(false); }}>
               💬{!chatOpen && unread > 0 && <span className="badge">{unread > 9 ? "9+" : unread}</span>}
             </button>
-            <button className="m-icon" aria-label="메뉴" onClick={() => { setMenuOpen((o) => !o); setChatOpen(false); }}>
+            <button className="m-icon" aria-label="1:1 대화함" onClick={() => (dmOpen ? setDmOpen(false) : openDM(null))}>
+              📨{dmUnread > 0 && <span className="badge">{dmUnread > 9 ? "9+" : dmUnread}</span>}
+            </button>
+            <button className="m-icon" aria-label="메뉴" onClick={() => { setMenuOpen((o) => !o); setChatOpen(false); setDmOpen(false); }}>
               {menuOpen ? "✕" : "☰"}
             </button>
           </div>
@@ -916,6 +957,10 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         </div>
       )}
 
+      {dmOpen && profile.pid && (
+        <DMPanel myPid={profile.pid} myName={profile.nickname} target={dmTarget} onClose={() => { setDmOpen(false); refreshUnread(); }} notify={dmNotify} bump={dmBump} />
+      )}
+
       {/* 🤝 상호작용 */}
       {selected && (() => {
         const tp = net.players.find((x) => x.id === selected);
@@ -926,13 +971,14 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
           <div className="interact panel">
             <div className="interact-head">
               <span className="dot" style={{ background: tp.color }} />
-              <b>{getBike(tp.bike).emoji} {tp.nickname}</b>
+              <b>{getBike(tp.bike).emoji} {cleanText(tp.nickname)}</b>
               {tp.bikeName && <span className="muted">「{tp.bikeName}」</span>}
               <span className="muted">· {d < 999 ? `${d}m` : "멀리"}</span>
               <button className="x" aria-label="닫기" onClick={() => setSelected(null)}>✕</button>
             </div>
             <div className="interact-btns">
               <button className="btn small ghost" onClick={() => poke(tp.id, "wave")}>👋 인사</button>
+              <button className="btn small ghost" disabled={!tp.pid || !profile.pid} onClick={() => tp.pid && openDM({ pid: tp.pid, nickname: tp.nickname })}>💬 1:1 대화</button>
               <button className="btn small ghost" disabled={!near} onClick={() => poke(tp.id, "hf_req")} title={near ? "" : "12m 안으로 가까이 가야 해요"}>
                 🖐️ 하이파이브{!near && " (가까이!)"}
               </button>

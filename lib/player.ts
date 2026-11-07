@@ -108,6 +108,12 @@ export async function loginAccount(name: string, pass: string): Promise<PlayerDa
   return strip(d);
 }
 
+/** 서버 함수 호출용 내 id/토큰 */
+export function myCred(): { p_id: string; p_token: string } | null {
+  const c = loadCred();
+  return c ? { p_id: c.id, p_token: c.token } : null;
+}
+
 function cred(): Cred {
   const c = loadCred();
   if (!c) throw new Error("플레이어 정보가 없어요");

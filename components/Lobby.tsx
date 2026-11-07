@@ -12,6 +12,7 @@ import { newAnim, now } from "./three/anim";
 import Garage from "./Garage";
 import { ensurePlayer, type PlayerData } from "@/lib/player";
 import { MAP_INFO as MAPS } from "@/lib/mapInfo";
+import { cleanText, hasBanned } from "@/lib/filter";
 
 const Preview = dynamic(() => import("./Preview"), {
   ssr: false,
@@ -83,6 +84,14 @@ export default function Lobby() {
     }
     if (nickname.length > 16) {
       setError("닉네임은 16자까지 가능해요.");
+      return;
+    }
+    if (hasBanned(nickname)) {
+      setError("닉네임에 쓸 수 없는 말이 들어 있어요. 고운 말로 지어 주세요 🙂");
+      return;
+    }
+    if (Object.values(p.bikeNames ?? {}).some((v) => v && hasBanned(v))) {
+      setError("자전거 이름에 쓸 수 없는 말이 들어 있어요. 고운 말로 지어 주세요 🙂");
       return;
     }
     const bikeNames = Object.fromEntries(
@@ -225,7 +234,7 @@ export default function Lobby() {
                   {times.map((r, i) => (
                     <li key={r.id}>
                       <span className="rank">{["🥇", "🥈", "🥉"][i] ?? i + 1}</span>
-                      <span className="name">{getBike(r.bike).emoji} {r.nickname}</span>
+                      <span className="name">{getBike(r.bike).emoji} {cleanText(r.nickname)}</span>
                       <span className="dist">{Math.floor(r.ms / 60000)}:{((r.ms % 60000) / 1000).toFixed(2).padStart(5, "0")}</span>
                       <span />
                     </li>
@@ -242,7 +251,7 @@ export default function Lobby() {
               {board.map((r, i) => (
                 <li key={r.id}>
                   <span className="rank">{["🥇", "🥈", "🥉"][i] ?? i + 1}</span>
-                  <span className="name">{getBike(r.bike).emoji} {r.nickname}</span>
+                  <span className="name">{getBike(r.bike).emoji} {cleanText(r.nickname)}</span>
                   {tab === "distance" ? (
                     <>
                       <span className="dist">{r.distance >= 1000 ? `${(r.distance / 1000).toFixed(2)}km` : `${r.distance}m`}</span>
