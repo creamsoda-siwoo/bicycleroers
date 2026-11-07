@@ -462,3 +462,28 @@ kbd {
 .linkish:hover { color: var(--accent); }
 button.m-player { border: 1px solid var(--line); background: #fff; border-radius: 99px; padding: 3px 9px; font-size: 12px; }
 button.m-player:disabled { opacity: 0.7; }
+
+/* 떠다니는 핸들 영역 */
+.steer-zone {
+  position: absolute; left: 0; bottom: 0; width: 56%; height: 46%; z-index: 4; touch-action: none;
+  -webkit-user-select: none; user-select: none;
+}
+.steer-float {
+  position: absolute; left: 0; top: 0; width: 120px; height: 120px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 4px; pointer-events: none; opacity: 0; transition: opacity 0.12s;
+}
+.steer-float::before {
+  content: ""; position: absolute; left: -40px; right: -40px; top: 30px; bottom: 30px; border-radius: 40px;
+  background: rgba(255, 255, 255, 0.55); box-shadow: inset 0 0 0 3px rgba(255,255,255,0.9);
+}
+.steer-float.on { opacity: 1; }
+.steer-float .steer-hint { position: relative; z-index: 1; margin: 0 -26px; }
+.steer-float .steer-knob { transition: none; }
+.steer-idle {
+  position: absolute; left: calc(16px + env(safe-area-inset-left)); bottom: calc(26px + env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.72); padding: 8px 14px; border-radius: 99px; font-size: 13px; font-weight: 700; color: #495057; pointer-events: none;
+}
+.m-ctl { display: flex; flex-direction: column; gap: 6px; }
+.m-ctl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.m-ctl-grid .chip { font-size: 12px; padding: 6px 8px; }
+.touch-ui .tricks, .touch-ui .m-emote-toggle, .touch-ui .emotes, .touch-ui .touch-right { z-index: 6; }

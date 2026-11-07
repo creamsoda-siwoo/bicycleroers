@@ -14,6 +14,7 @@ import { CRASH_DUR, newAnim, now, type AnimState } from "../three/anim";
 import { axis, input, pollGamepad, queueTrick, trickQueue } from "./input";
 import { addSkid } from "../three/Skids";
 import { setSkid, setWind } from "@/lib/sound";
+import { buzz, controls, tiltSteer } from "@/lib/settings";
 import type { Bubble, MovePayload, NetPlayer, Remote } from "./net";
 
 import { ghost, group, race, raceResults, saveGhost } from "./state";
@@ -141,6 +142,7 @@ export function Player({
     if (group.phase === "racing") group.myFinish = ms;
     popups.push({ text: `🏁 ${fmtTime(sec)}${ghostBest ? "  👻 고스트 갱신!" : best ? "  최고 기록!" : ""}`, kind: "trick" });
     sfx("finish");
+    buzz([30, 40, 30, 40, 70]);
   };
   const startRun = (t: number) => {
     race.running = true;
@@ -191,6 +193,7 @@ export function Player({
           s.speed = Math.max(s.speed, spec.maxSpeed * 1.4);
           popups.push({ text: "🚀 부스터!", kind: "bonus" });
           sfx("boost");
+          buzz(40);
         }
       }
     }
@@ -202,15 +205,23 @@ export function Player({
       // X(2): 묘기 (A 는 점프 버튼과 같이 처리)
       if (b === 2) queueTrick("auto");
     }
-    const throttle = bowing ? 0 : Math.max(input.f ? 1 : 0, axis.throttle);
     const brakeIn = bowing ? 0 : Math.max(input.b ? 1 : 0, axis.brake);
+    // 휴대폰 자동 페달: 브레이크를 누르지 않는 동안 알아서 밟음 (페달 버튼 = 힘껏)
+    const autoPedal = controls.touch && controls.autoPedal && controls.armed && brakeIn === 0 && s.grounded ? 0.82 : 0;
+    const throttle = bowing ? 0 : Math.max(input.f ? 1 : 0, axis.throttle, autoPedal);
     const jumpIn = input.jump || axis.jump;
     // 버튼을 누른 횟수로 판단 (짧게 톡 쳐도 놓치지 않음)
     const tapped = input.jumpTaps !== s.lastTaps;
     s.lastTaps = input.jumpTaps;
     // 공중에서 점프를 다시 누르면 묘기
     if (tapped && !s.grounded) queueTrick("auto");
-    const rawSteer = bowing ? 0 : axis.steerActive ? axis.steer : (input.l ? 1 : 0) - (input.r ? 1 : 0);
+    const tilt = controls.tilt ? tiltSteer() : 0;
+    const analog = axis.steerActive ? axis.steer : tilt;
+    const rawSteer = bowing
+      ? 0
+      : axis.steerActive || Math.abs(tilt) > 0.001
+        ? Math.max(-1, Math.min(1, analog * controls.sensitivity))
+        : (input.l ? 1 : 0) - (input.r ? 1 : 0);
     // 핸들은 부드럽게 따라옴 (놓으면 더 빨리 돌아옴)
     const steerRate = Math.abs(rawSteer) > Math.abs(s.steer) ? 9 : 12;
     s.steer += (rawSteer - s.steer) * (1 - Math.exp(-steerRate * dt));
@@ -337,6 +348,7 @@ export function Player({
             s.shake = Math.max(s.shake, Math.min(0.3, rel * 0.03));
             anim.squash = Math.max(anim.squash, 0.4);
             sfx("land");
+            buzz(35);
             popups.push({ text: "💥 쿵!", kind: "crash" });
           }
         }
@@ -353,6 +365,7 @@ export function Player({
         s.grounded = false;
         s.airStart = t;
         sfx("jump", 0.7);
+        buzz(8);
       } else if (g < s.y - (0.08 + 0.9 * Math.abs(s.speed) * dt)) {
         s.grounded = false; // 점프대 끝에서 날아오름 (경사 속도 유지)
         if (s.vy > 0.5) s.vy += 2.5 + Math.abs(s.speed) * 0.25;
@@ -380,9 +393,13 @@ export function Player({
           else s.combo.push(anim.trick);
           anim.trick = null;
         }
-        if (!crashed && t - s.airStart > 0.35) sfx("land", 0.8);
+        if (!crashed && t - s.airStart > 0.35) {
+          sfx("land", 0.8);
+          buzz(Math.round(15 + impact * 40));
+        }
         if (crashed) {
           sfx("crash");
+          buzz([60, 40, 90]);
           s.combo = [];
           s.speed = 0;
           s.stunUntil = t + CRASH_DUR;
@@ -396,6 +413,7 @@ export function Player({
           const pts = Math.round((base + air * 100) * mult);
           stats.trickScore += pts;
           sfx("trick");
+          buzz([25, 30, 25]);
           const names = s.combo.map((id) => TRICK_MAP[id].name).join(" + ");
           popups.push({
             text: `${names}${s.combo.length > 1 ? ` 콤보 x${s.combo.length}` : ""}  +${pts}`,
@@ -451,6 +469,7 @@ export function Player({
         stats.trickScore += 250;
         popups.push({ text: "💫 링 통과! ⭐+3 +250", kind: "bonus" });
         sfx("ring");
+        buzz([15, 20, 15]);
       }
     }
     stats.airborne = !s.grounded;
@@ -548,6 +567,7 @@ export function Player({
         if (race.running && (course.kind === "run" || !race.last)) popups.push({ text: `⏱️ ${course.name} 시작!`, kind: "bonus" });
         void n;
         sfx("checkpoint");
+        buzz(12);
       } else if (race.running) {
         race.next += 1;
         if (race.next >= n) {
@@ -560,6 +580,7 @@ export function Player({
           }
         } else {
           sfx("checkpoint");
+        buzz(12);
         }
       }
     }
@@ -610,7 +631,8 @@ export function Player({
       cy = s.y + 18;
       tmp.set(s.x, s.y, s.z);
     } else {
-      const back = 5.6 + vn * 0.1;
+      const portrait = (camera as THREE.PerspectiveCamera).aspect < 1;
+      const back = 5.6 + vn * 0.1 + (portrait ? 1.2 : 0);
       // 코너에서는 도는 쪽을 미리 바라봄
       const look = s.h + s.yawRate * 0.35;
       cx = s.x - Math.sin(s.h - s.yawRate * 0.12) * back;
@@ -619,7 +641,9 @@ export function Player({
       tmp.set(s.x + Math.sin(look) * 3, s.y + 1.1, s.z + Math.cos(look) * 3);
     }
     const cam = camera as THREE.PerspectiveCamera;
-    const fov = Math.min(84, 56 + vn * 0.85 + (boosting ? 8 : 0));
+    // 세로 화면은 좌우가 좁으므로 시야를 넓힘
+    const baseFov = cam.aspect < 1 ? 70 : 56;
+    const fov = Math.min(baseFov + 28, baseFov + vn * 0.85 + (boosting ? 8 : 0));
     if (Math.abs(cam.fov - fov) > 0.1) {
       cam.fov += (fov - cam.fov) * Math.min(1, 4 * dt);
       cam.updateProjectionMatrix();
