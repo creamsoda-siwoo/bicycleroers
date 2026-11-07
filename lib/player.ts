@@ -13,6 +13,8 @@ export interface PlayerData {
   rides: number;
   owned: string[];
   equipped: Equipped;
+  /** 기록 지키기 이름 (등록했으면) */
+  account?: string | null;
 }
 
 const KEY = "bicycleroers-player";
@@ -47,16 +49,61 @@ function strip(d: PlayerData & { token?: string }): PlayerData {
   return { ...rest, equipped: rest.equipped ?? {}, owned: rest.owned ?? [] };
 }
 
-/** 저장된 플레이어를 불러오고, 없으면 새로 만듦 */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 저장된 플레이어를 불러오고, 없을 때만 새로 만듦.
+ * 네트워크 오류로 불러오기에 실패해도 기존 기록 연결을 절대 덮어쓰지 않음.
+ */
 export async function ensurePlayer(nickname: string): Promise<PlayerData> {
   const c = loadCred();
   if (c) {
-    const { data, error } = await supabase.rpc("bike_player_get", { p_id: c.id, p_token: c.token });
-    if (!error && data) return strip(data as PlayerData);
+    let lastErr = "";
+    for (let i = 0; i < 4; i++) {
+      const { data, error } = await supabase.rpc("bike_player_get", { p_id: c.id, p_token: c.token });
+      if (!error && data) return strip(data as PlayerData);
+      lastErr = error?.message ?? "불러오기 실패";
+      if (lastErr.includes("invalid player")) break; // 토큰이 정말 틀린 경우만 새로 만듦
+      await sleep(600 * (i + 1));
+    }
+    if (!lastErr.includes("invalid player")) throw new Error(`기록을 불러오지 못했어요 (${lastErr}). 잠시 후 다시 시도해 주세요`);
+    // 혹시 모를 복구를 위해 이전 연결 정보 보관
+    try {
+      localStorage.setItem(`${KEY}-old-${Date.now()}`, JSON.stringify(c));
+    } catch {
+      /* 무시 */
+    }
   }
   const { data, error } = await supabase.rpc("bike_player_create", { p_nickname: nickname || "라이더" });
   if (error || !data) throw new Error(error?.message ?? "플레이어 생성 실패");
   const d = data as PlayerData & { token: string };
+  saveCred({ id: d.id, token: d.token });
+  return strip(d);
+}
+
+/** 🔐 이름 + 비밀번호 등록 */
+export async function setAccount(name: string, pass: string): Promise<PlayerData> {
+  const c = cred();
+  const { data, error } = await supabase.rpc("bike_account_set", { p_id: c.id, p_token: c.token, p_name: name, p_pass: pass });
+  if (error) throw new Error(error.message);
+  return strip(data as PlayerData);
+}
+
+/** 🔐 이름 + 비밀번호로 기록 불러오기 (이 기기에 연결) */
+export async function loginAccount(name: string, pass: string): Promise<PlayerData> {
+  const { data, error } = await supabase.rpc("bike_account_login", { p_name: name, p_pass: pass });
+  if (error) throw new Error(error.message);
+  const d = data as PlayerData & { token?: string; error?: string };
+  if (d.error) throw new Error(d.error);
+  if (!d.token) throw new Error("불러오기 실패");
+  const old = loadCred();
+  if (old && old.id !== d.id) {
+    try {
+      localStorage.setItem(`${KEY}-old-${Date.now()}`, JSON.stringify(old));
+    } catch {
+      /* 무시 */
+    }
+  }
   saveCred({ id: d.id, token: d.token });
   return strip(d);
 }

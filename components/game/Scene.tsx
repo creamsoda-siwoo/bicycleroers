@@ -205,10 +205,10 @@ export function Player({
       // X(2): 묘기 (A 는 점프 버튼과 같이 처리)
       if (b === 2) queueTrick("auto");
     }
-    const brakeIn = bowing ? 0 : Math.max(input.b ? 1 : 0, axis.brake);
+    const brakeIn = bowing ? 0 : Math.max(input.b ? 1 : 0, axis.brake, axis.joyBrake);
     // 휴대폰 자동 페달: 브레이크를 누르지 않는 동안 알아서 밟음 (페달 버튼 = 힘껏)
     const autoPedal = controls.touch && controls.autoPedal && controls.armed && brakeIn === 0 && s.grounded ? 0.82 : 0;
-    const throttle = bowing ? 0 : Math.max(input.f ? 1 : 0, axis.throttle, autoPedal);
+    const throttle = bowing ? 0 : Math.max(input.f ? 1 : 0, axis.throttle, axis.joyThrottle, autoPedal);
     const jumpIn = input.jump || axis.jump;
     // 버튼을 누른 횟수로 판단 (짧게 톡 쳐도 놓치지 않음)
     const tapped = input.jumpTaps !== s.lastTaps;

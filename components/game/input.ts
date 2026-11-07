@@ -11,6 +11,9 @@ export const axis = {
   brake: 0,
   jump: false,
   padActive: false,
+  /** 휴대폰 조이스틱 (게임패드와 따로) */
+  joyThrottle: 0,
+  joyBrake: 0,
 };
 /** 다음 프레임에 시도할 묘기 */
 /** "auto" = 남은 체공 시간에 맞는 묘기를 자동 선택 */

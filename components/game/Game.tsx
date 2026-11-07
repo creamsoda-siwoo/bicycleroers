@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
 import { getBike } from "@/lib/bikes";
-import { EMOTES, loadProfile, type EmoteId, type Profile } from "@/lib/profile";
+import { MAP_INFO } from "@/lib/mapInfo";
+import { EMOTES, loadProfile, saveProfile, type EmoteId, type Profile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
 import { ensurePlayer, giftStars, saveProgress, saveProgressOnExit, type ProgressDelta } from "@/lib/player";
 import { World } from "../three/World";
@@ -19,6 +20,90 @@ import { axis, bindKeyboard, input, queueTrick } from "./input";
 import { useNet } from "./net";
 
 const BUBBLE_MS = 6000;
+
+/** 🕹️ 휴대폰 조이스틱: 왼쪽 아래 아무 데나 대고 밀기. 미는 쪽으로 가고, 많이 밀수록 빠름, 아래로 당기면 브레이크 */
+function Joystick() {
+  const knob = useRef<HTMLDivElement>(null);
+  const base = useRef<HTMLDivElement>(null);
+  const pid = useRef<number | null>(null);
+  const origin = useRef({ x: 0, y: 0 });
+  const [active, setActive] = useState(false);
+  const R = 58;
+  const move = (cx: number, cy: number) => {
+    let dx = cx - origin.current.x;
+    let dy = cy - origin.current.y;
+    const d = Math.hypot(dx, dy);
+    if (d > R) {
+      // 손가락이 많이 나가면 기준점이 따라옴
+      origin.current.x += (dx / d) * (d - R);
+      origin.current.y += (dy / d) * (d - R);
+      if (base.current) base.current.style.transform = `translate(${origin.current.x - originBox.current.x - 70}px, ${origin.current.y - originBox.current.y - 70}px)`;
+      dx = (dx / d) * R;
+      dy = (dy / d) * R;
+    }
+    if (knob.current) knob.current.style.transform = `translate(${dx}px, ${dy}px)`;
+    const nx = dx / R;
+    const ny = dy / R; // 아래가 +
+    const mag = Math.min(1, Math.hypot(nx, ny));
+    const dead = mag < 0.12;
+    axis.steer = dead ? 0 : -Math.sign(nx) * Math.pow(Math.abs(nx), 1.15);
+    axis.steerActive = !dead;
+    if (ny > 0.5) {
+      // 아래로 당김 = 브레이크
+      axis.joyThrottle = 0;
+      axis.joyBrake = Math.min(1, (ny - 0.35) / 0.55);
+    } else {
+      axis.joyBrake = 0;
+      axis.joyThrottle = dead ? 0 : Math.min(1, 0.35 + mag * 0.75);
+    }
+  };
+  const originBox = useRef({ x: 0, y: 0 });
+  const release = () => {
+    pid.current = null;
+    setActive(false);
+    if (knob.current) knob.current.style.transform = "translate(0px, 0px)";
+    axis.steer = 0;
+    axis.steerActive = false;
+    axis.joyThrottle = 0;
+    axis.joyBrake = 0;
+  };
+  useEffect(() => release, []);
+  return (
+    <div
+      className="steer-zone joy-zone"
+      aria-label="조이스틱: 왼쪽 아래를 누르고 가고 싶은 쪽으로 밀기"
+      onPointerDown={(e) => {
+        if (pid.current !== null) return;
+        e.preventDefault();
+        pid.current = e.pointerId;
+        try {
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        } catch {
+          /* 무시 */
+        }
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        originBox.current = { x: r.left, y: r.top };
+        origin.current = { x: e.clientX, y: e.clientY };
+        if (base.current) base.current.style.transform = `translate(${e.clientX - r.left - 70}px, ${e.clientY - r.top - 70}px)`;
+        controls.armed = true;
+        setActive(true);
+        move(e.clientX, e.clientY);
+      }}
+      onPointerMove={(e) => {
+        if (pid.current === e.pointerId) move(e.clientX, e.clientY);
+      }}
+      onPointerUp={(e) => pid.current === e.pointerId && release()}
+      onPointerCancel={(e) => pid.current === e.pointerId && release()}
+    >
+      <div ref={base} className={active ? "joy-base on" : "joy-base"}>
+        <span className="joy-mark up">▲</span>
+        <span className="joy-mark down">브레이크</span>
+        <div ref={knob} className="joy-knob">🚲</div>
+      </div>
+      {!active && <div className="steer-idle">🕹️ 여기를 누르고 가고 싶은 쪽으로 밀기</div>}
+    </div>
+  );
+}
 
 /** 휴대폰용 떠다니는 핸들: 화면 왼쪽 아래 아무 데나 대고 좌우로 끌면 됨 */
 function SteerZone() {
@@ -633,6 +718,28 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
       </div>
   );
 
+  const changeMap = async (id: string) => {
+    if (id === map.id) return;
+    setMenuOpen(false);
+    popups.push({ text: "🗺️ 맵을 옮기는 중… 기록 저장할게요", kind: "bonus" });
+    await autosave(false);
+    const cur = loadProfile();
+    if (cur) saveProfile({ ...cur, map: id as Profile["map"] });
+    window.location.reload();
+  };
+  const mapPicker = (
+    <div className="map-pick">
+      <b>🗺️ 맵 바꾸기</b>
+      <div className="map-pick-row">
+        {MAP_INFO.map((m) => (
+          <button key={m.id} className={m.id === map.id ? "chip on" : "chip"} onClick={() => changeMap(m.id)}>
+            {m.emoji} {m.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   const walletNow = walletBase !== null ? walletBase + hud.stars - saved.current.stars : null;
 
   return (
@@ -667,7 +774,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
           <div className="stat-grid">
             <div><span className="big">{Math.round(hud.speed * 3.6)}</span><small>km/h</small></div>
             <div><span className="big">{hud.dist >= 1000 ? (hud.dist / 1000).toFixed(2) : Math.round(hud.dist)}</span><small>{hud.dist >= 1000 ? "km" : "m"}</small></div>
-            <div><span className="big">⭐ {hud.stars}</span></div>
+            <div><span className="big">⭐ {walletNow ?? hud.stars}</span>{hud.stars > 0 && <small>+{hud.stars}</small>}</div>
             <div><span className="big">🤸 {hud.trick}</span></div>
           </div>
         </div>
@@ -710,6 +817,10 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
             <button className="btn small ghost" onClick={openRace} disabled={group.phase !== "idle" && group.phase !== "done"}>
               🏁 다 같이 레이스
             </button>
+            <button className="btn small ghost" onClick={() => setMenuOpen((o) => !o)}>🗺️ 맵</button>
+          </div>
+          {menuOpen && !isTouch && <div className="desk-map">{mapPicker}</div>}
+          <div className="row">
             <button className="btn small" onClick={exit} disabled={saving}>
               {saving ? "저장 중…" : <>🏁<span className="lbl"> 그만 타기</span></>}
             </button>
@@ -723,7 +834,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         <>
           <div className="m-stat">
             <b>{Math.round(hud.speed * 3.6)}</b><small>km/h</small>
-            <span>⭐{hud.stars}</span>
+            <span>⭐{walletNow ?? hud.stars}</span>
             {hud.trick > 0 && <span>🤸{hud.trick}</span>}
           </div>
           <div className="m-top-btns">
@@ -752,9 +863,13 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
                   </button>
                 ))}
               </div>
+              {mapPicker}
               <div className="m-ctl">
                 <b>🎮 조작 설정</b>
                 <div className="m-ctl-grid">
+                  <button className="chip on" onClick={() => { controls.steerMode = controls.steerMode === "joystick" ? "pad" : "joystick"; saveControls(); setCtl((n) => n + 1); }}>
+                    {controls.steerMode === "joystick" ? "🕹️ 조이스틱" : "🎡 핸들+페달"} (바꾸기)
+                  </button>
                   <button className={controls.autoPedal ? "chip on" : "chip"} onClick={() => toggleCtl("autoPedal")}>🦶 자동 페달 {controls.autoPedal ? "ON" : "OFF"}</button>
                   <button className={controls.tilt ? "chip on" : "chip"} onClick={() => toggleCtl("tilt")}>📱 기울여 조종 {controls.tilt ? "ON" : "OFF"}</button>
                   <button className="chip" onClick={cycleSens}>🎚️ 핸들 감도 {controls.sensitivity < 0.9 ? "낮음" : controls.sensitivity < 1.2 ? "보통" : "높음"}</button>
@@ -934,8 +1049,8 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
       {!isTouch && chatPanel}
 
       {/* 모바일 컨트롤: 왼손 방향, 오른손 페달/브레이크/점프 */}
-      {isTouch && !controls.tilt && <SteerZone />}
-      <div className="touch touch-right">
+      {isTouch && !controls.tilt && (controls.steerMode === "joystick" ? <Joystick /> : <SteerZone />)}
+      <div className={controls.steerMode === "joystick" && !controls.tilt ? "touch touch-right joy-mode" : "touch touch-right"}>
         <button className="tbtn small" aria-label="브레이크" {...hold("b")}>▼</button>
         <div className="col">
           <button className={hud.air ? "tbtn jump air" : "tbtn jump"} aria-label={hud.air ? "묘기" : "점프"} {...hold("jump")}>

@@ -487,3 +487,33 @@ button.m-player:disabled { opacity: 0.7; }
 .m-ctl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .m-ctl-grid .chip { font-size: 12px; padding: 6px 8px; }
 .touch-ui .tricks, .touch-ui .m-emote-toggle, .touch-ui .emotes, .touch-ui .touch-right { z-index: 6; }
+
+.account { margin-top: 12px; padding: 12px; border-radius: 14px; background: #fff4e6; border: 2px dashed #ffb26b; font-size: 14px; }
+.account.ok { background: #ecfdf3; border-color: #74c69d; }
+.account p { margin: 0 0 8px; }
+.account .row { flex-wrap: wrap; margin-top: 6px; }
+.account input { flex: 1 1 140px; min-width: 0; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); font-size: 15px; }
+.account details summary { cursor: pointer; font-weight: 700; margin-top: 4px; }
+
+/* 조이스틱 */
+.joy-zone { width: 60%; height: 52%; }
+.joy-base {
+  position: absolute; left: 0; top: 0; width: 140px; height: 140px; border-radius: 50%; pointer-events: none;
+  background: rgba(255, 255, 255, 0.4); box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.85), 0 4px 14px rgba(0,0,0,0.12);
+  opacity: 0; transition: opacity 0.1s; display: grid; place-items: center;
+}
+.joy-base.on { opacity: 1; }
+.joy-knob {
+  width: 60px; height: 60px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; font-size: 26px;
+  box-shadow: 0 3px 0 #d95f3b; grid-area: 1 / 1;
+}
+.joy-mark { position: absolute; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 700; color: #495057; }
+.joy-mark.up { top: 6px; }
+.joy-mark.down { bottom: 8px; }
+.touch-right.joy-mode .tbtn.small, .touch-right.joy-mode .tbtn.pedal { display: none; }
+.touch-right.joy-mode .tbtn.jump { width: 84px; height: 84px; font-size: 17px; }
+
+.map-pick { display: flex; flex-direction: column; gap: 6px; }
+.map-pick-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.map-pick-row .chip { font-size: 12px; padding: 6px 10px; }
+.desk-map { margin: 6px 0; }

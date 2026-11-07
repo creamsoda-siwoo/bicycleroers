@@ -1,5 +1,7 @@
 // 조작 설정 (브라우저에 저장)
 export interface ControlSettings {
+  /** joystick: 조이스틱 하나로 방향+속도 / pad: 핸들+페달 버튼 */
+  steerMode: "joystick" | "pad";
   autoPedal: boolean;
   tilt: boolean;
   haptics: boolean;
@@ -7,10 +9,11 @@ export interface ControlSettings {
   sensitivity: number;
 }
 
-const KEY = "bicycleroers-controls";
+const KEY = "bicycleroers-controls-v2";
 
 export const controls: ControlSettings & { touch: boolean; armed: boolean } = {
-  autoPedal: true,
+  steerMode: "joystick",
+  autoPedal: false,
   tilt: false,
   haptics: true,
   sensitivity: 1,
@@ -33,8 +36,8 @@ export function loadControls(isTouch: boolean) {
 
 export function saveControls() {
   try {
-    const { autoPedal, tilt, haptics, sensitivity } = controls;
-    localStorage.setItem(KEY, JSON.stringify({ autoPedal, tilt: false, haptics, sensitivity }));
+    const { steerMode, autoPedal, tilt, haptics, sensitivity } = controls;
+    localStorage.setItem(KEY, JSON.stringify({ steerMode, autoPedal, tilt: false, haptics, sensitivity }));
   } catch {
     /* 무시 */
   }

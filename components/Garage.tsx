@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ITEMS, SLOTS, type Slot } from "@/lib/shop";
-import { buyItem, equipItem, exportCode, importCode, type PlayerData } from "@/lib/player";
+import { buyItem, equipItem, exportCode, importCode, loginAccount, setAccount, type PlayerData } from "@/lib/player";
 import { sfx, unlockAudio } from "@/lib/sound";
 
 function fmtDist(m: number) {
@@ -23,12 +23,17 @@ export default function Garage({
   const [msg, setMsg] = useState("");
   const [code, setCode] = useState("");
   const [showCode, setShowCode] = useState(false);
+  const [accName, setAccName] = useState("");
+  const [accPass, setAccPass] = useState("");
+  const [loginName, setLoginName] = useState("");
+  const [loginPass, setLoginPass] = useState("");
 
   if (!player) {
     return (
       <section className="card garage">
         <h2>🛠️ 차고</h2>
-        <p className="muted">{error ? `기록을 불러오지 못했어요: ${error}` : "내 기록 불러오는 중…"}</p>
+        <p className="muted">{error ? error : "내 기록 불러오는 중…"}</p>
+        {error && <button className="btn small" onClick={() => window.location.reload()}>🔄 다시 시도</button>}
       </section>
     );
   }
@@ -105,6 +110,37 @@ export default function Garage({
       </div>
       {msg && <div className="garage-msg">{msg}</div>}
       <p className="muted small-note">별은 마을에서 ⭐ 별을 줍거나 💫 공중 링을 통과하면 모여요. 기록은 자동 저장돼요.</p>
+
+      <div className={player.account ? "account ok" : "account"}>
+        {player.account ? (
+          <p>🔐 <b>{player.account}</b> 이름으로 기록이 지켜지고 있어요. 다른 휴대폰·브라우저에서도 이 이름과 비밀번호로 불러올 수 있어요.</p>
+        ) : (
+          <>
+            <p>🔐 <b>기록 지키기</b> — 이름과 비밀번호를 정해 두면 브라우저 기록이 지워지거나 기기를 바꿔도 별·아이템이 그대로예요.</p>
+            <div className="row">
+              <input placeholder="이름 (2~16자)" value={accName} maxLength={16} onChange={(e) => setAccName(e.target.value)} />
+              <input placeholder="비밀번호 (4자 이상)" type="password" value={accPass} maxLength={64} onChange={(e) => setAccPass(e.target.value)} />
+              <button
+                className="btn small"
+                disabled={busy === "acc"}
+                onClick={() => act("acc", () => setAccount(accName, accPass), "🔐 기록 지키기 완료! 이름과 비밀번호를 꼭 기억하세요")}
+              >
+                지키기
+              </button>
+            </div>
+          </>
+        )}
+        <details>
+          <summary>🔑 이름과 비밀번호로 내 기록 불러오기</summary>
+          <div className="row">
+            <input placeholder="이름" value={loginName} maxLength={16} onChange={(e) => setLoginName(e.target.value)} />
+            <input placeholder="비밀번호" type="password" value={loginPass} maxLength={64} onChange={(e) => setLoginPass(e.target.value)} />
+            <button className="btn small" disabled={busy === "login"} onClick={() => act("login", () => loginAccount(loginName, loginPass), "✅ 내 기록을 불러왔어요!")}>
+              불러오기
+            </button>
+          </div>
+        </details>
+      </div>
 
       <details className="transfer" open={showCode} onToggle={(e) => setShowCode((e.target as HTMLDetailsElement).open)}>
         <summary>📱 다른 기기에서 이어하기</summary>
