@@ -197,6 +197,10 @@ export default function Game() {
       .then((pl) => {
         setProfile((p) => (p ? { ...p, equip: pl.equipped, pid: pl.id, bikeName: p.bikeNames?.[p.bike] ?? p.bikeName } : p));
         setWallet(pl.stars);
+        // 서버 닉네임을 지금 닉네임으로 바로 맞춤 (1:1 대화·랭킹에 표시)
+        if (pl.nickname !== profile.nickname) {
+          void saveProgress({ nickname: profile.nickname, distance: 0, stars: 0, trick: 0, bestTrick: 0, bestDistance: 0, finished: false });
+        }
       })
       .catch(() => setWallet(null))
       .finally(() => setReady(true));
