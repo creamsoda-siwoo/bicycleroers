@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Canvas } from "@react-three/fiber";
 import { getBike } from "@/lib/bikes";
-import { EMOTES, TRICKS, loadProfile, type EmoteId, type Profile } from "@/lib/profile";
+import { EMOTES, loadProfile, type EmoteId, type Profile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
 import { ensurePlayer, saveProgress, saveProgressOnExit, type ProgressDelta } from "@/lib/player";
 import { World } from "../three/World";
@@ -237,8 +237,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         setChatOpen(true);
         setTimeout(() => chatInput.current?.focus(), 0);
       } else {
-        const tr = TRICKS.find((x) => `Key${x.key}` === code);
-        if (tr) queueTrick(tr.id);
+        if (code === "KeyQ" || code === "KeyE") queueTrick("auto");
       }
     });
   }, [doEmote, cycleView, ringBell]);
@@ -322,9 +321,11 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
     return b && Date.now() - b.at < BUBBLE_MS ? b.text : null;
   };
 
-  const hold = (k: keyof typeof input) => ({
+  type HoldKey = "f" | "b" | "l" | "r" | "jump";
+  const hold = (k: HoldKey) => ({
     onPointerDown: (e: React.PointerEvent) => {
       e.preventDefault();
+      if (k === "jump") input.jumpTaps++;
       input[k] = true;
     },
     onPointerUp: () => (input[k] = false),
@@ -523,23 +524,16 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
       <div className="speedlines" style={{ opacity: Math.max(0, Math.min(0.9, (hud.speed - spec.maxSpeed * 0.75) / (spec.maxSpeed * 0.6))) }} />
 
       {/* 묘기 버튼 */}
-      {(!isTouch || hud.air) && (
-      <div className={hud.air ? "tricks air" : "tricks"}>
-        {TRICKS.map((tr) => (
-          <button
-            key={tr.id}
-            className="btn trick"
-            aria-label={tr.name}
-            onPointerDown={(e) => {
-              e.preventDefault();
-              queueTrick(tr.id);
-            }}
-          >
-            <span className="e-ico">{tr.icon}</span>
-            <span className="e-txt">{tr.name}</span> <kbd>{tr.key}</kbd>
-          </button>
-        ))}
-      </div>
+      {!isTouch && (
+        <button
+          className={hud.air ? "btn trick-one air" : "btn trick-one"}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            queueTrick("auto");
+          }}
+        >
+          🤸 묘기 <kbd>공중에서 Space</kbd>
+        </button>
       )}
 
       {/* 감정표현 */}
@@ -572,12 +566,14 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
       <div className="touch touch-right">
         <button className="tbtn small" aria-label="브레이크" {...hold("b")}>▼</button>
         <div className="col">
-          <button className="tbtn jump" aria-label="점프" {...hold("jump")}>점프</button>
+          <button className={hud.air ? "tbtn jump air" : "tbtn jump"} aria-label={hud.air ? "묘기" : "점프"} {...hold("jump")}>
+            {hud.air ? "🤸 묘기" : "점프"}
+          </button>
           <button className="tbtn pedal" aria-label="페달" {...hold("f")}>▲ 페달</button>
         </div>
       </div>
 
-      {!isTouch && <div className="help">W/↑ 페달 · S/↓ 브레이크 · A D 방향 · S+방향 드리프트 · Space 점프 → 공중에서 묘기 · T 따릉 · V 카메라 · Enter 채팅 · 🎮 게임패드 OK</div>}
+      {!isTouch && <div className="help">W/↑ 페달 · S/↓ 브레이크 · A D 방향 · S+방향 드리프트 · Space 점프 · 공중에서 한 번 더 = 묘기 · T 따릉 · V 카메라 · Enter 채팅 · 🎮 게임패드 OK</div>}
     </div>
   );
 }

@@ -405,3 +405,13 @@ kbd {
   .m-chat .chat-list { height: 70px; }
   .m-chat { right: auto; width: min(60vw, 420px); }
 }
+
+/* 묘기: 버튼 하나 */
+.btn.trick-one {
+  position: absolute; right: 12px; bottom: 14px; background: #fff; color: var(--ink); box-shadow: 0 3px 0 #e5d5c5;
+  font-size: 15px; padding: 10px 16px; transition: transform 0.12s, background 0.12s;
+}
+.btn.trick-one kbd { margin-left: 6px; }
+.btn.trick-one.air { background: #ffd166; box-shadow: 0 3px 0 #e0a800; transform: scale(1.08); }
+.tbtn.jump.air { background: #ff70a6; color: #fff; font-size: 14px; animation: pulse 0.5s ease-in-out infinite alternate; }
+@keyframes pulse { from { transform: scale(1); } to { transform: scale(1.1); } }

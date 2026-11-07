@@ -252,8 +252,8 @@ export default function Lobby() {
             <li><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> 방향 · <kbd>Space</kbd> 점프</li>
             <li><kbd>B</kbd> 절하기 · <kbd>H</kbd> 인사 · <kbd>C</kbd> 만세 · <kbd>T</kbd> 🔔 따릉따릉</li>
             <li>⏱️ 타임어택: 마을은 출발 아치부터 트랙 한 바퀴, 설산은 🚡 리프트로 정상에 올라 슬라럼 게이트 통과!</li>
-            <li>공중에서 묘기: <kbd>Q</kbd> 백플립 · <kbd>F</kbd> 프론트플립 · <kbd>E</kbd> 360 · <kbd>G</kbd> 슈퍼맨 · <kbd>R</kbd> 노핸드</li>
-            <li>묘기를 이어 쓰면 콤보 배율! 다 못 돌고 착지하면 꽈당 💥</li>
+            <li>🤸 묘기: 점프한 뒤 공중에서 <kbd>Space</kbd> 한 번 더! 높이에 맞는 묘기가 자동으로 나가요</li>
+            <li>방향키를 누르고 있으면 360 스핀, 브레이크면 프론트플립 · 여러 번 누르면 콤보!</li>
             <li><kbd>V</kbd> 카메라 전환 · <kbd>Enter</kbd> 채팅</li>
             <li>🛹 스케이트파크 · 🌈 무지개 다리 · 🎡 관람차 · 🚀 부스터 · 💫 공중 링을 찾아보세요!</li>
           </ul>

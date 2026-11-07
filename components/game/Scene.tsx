@@ -90,6 +90,7 @@ export function Player({
     combo: [] as TrickId[],
     hoopAt: map.hoops.map(() => -10),
     steer: 0,
+    lastTaps: 0,
     yawRate: 0,
     drift: 0,
     driftStart: 0,
@@ -155,15 +156,17 @@ export function Player({
     // ── 입력 (키보드 + 조이스틱/게임패드) ──
     const padPressed = pollGamepad();
     for (const b of padPressed) {
-      if (b === 2) queueTrick("backflip");
-      else if (b === 1) queueTrick("frontflip");
-      else if (b === 3) queueTrick("spin");
-      else if (b === 4) queueTrick("superman");
-      else if (b === 5) queueTrick("nohand");
+      // X(2): 묘기 (A 는 점프 버튼과 같이 처리)
+      if (b === 2) queueTrick("auto");
     }
     const throttle = bowing ? 0 : Math.max(input.f ? 1 : 0, axis.throttle);
     const brakeIn = bowing ? 0 : Math.max(input.b ? 1 : 0, axis.brake);
     const jumpIn = input.jump || axis.jump;
+    // 버튼을 누른 횟수로 판단 (짧게 톡 쳐도 놓치지 않음)
+    const tapped = input.jumpTaps !== s.lastTaps;
+    s.lastTaps = input.jumpTaps;
+    // 공중에서 점프를 다시 누르면 묘기
+    if (tapped && !s.grounded) queueTrick("auto");
     const rawSteer = bowing ? 0 : axis.steerActive ? axis.steer : (input.l ? 1 : 0) - (input.r ? 1 : 0);
     // 핸들은 부드럽게 따라옴 (놓으면 더 빨리 돌아옴)
     const steerRate = Math.abs(rawSteer) > Math.abs(s.steer) ? 9 : 12;
@@ -259,7 +262,7 @@ export function Player({
     // ── 높이 / 점프 ──
     const g = groundHeight(s.x, s.z);
     if (s.grounded) {
-      if (jumpIn && !bowing) {
+      if ((jumpIn || tapped) && !bowing) {
         s.vy = spec.jump;
         s.grounded = false;
         s.airStart = t;
@@ -320,14 +323,28 @@ export function Player({
     // ── 묘기 시작 (공중에서만) ──
     // 버튼을 조금 일찍 눌러도 0.4초 동안 기억했다가 공중에 뜨면 실행
     const want = trickQueue.id;
-    if (want && !s.grounded && !stunned && !anim.trick && s.y - g > 0.35) {
+    if (want && !s.grounded && !stunned && !anim.trick && (s.y - g > 0.15 || s.vy < 0)) {
       trickQueue.id = null;
-      anim.trick = want;
-      anim.trickAt = t;
-      sendTrick(want);
+      let pick: TrickId | null = want === "auto" ? null : want;
+      if (want === "auto") {
+        // 착지까지 남은 시간
+        const h = Math.max(0, s.y - g);
+        const tLand = (s.vy + Math.sqrt(Math.max(0, s.vy * s.vy + 2 * GRAVITY * h))) / GRAVITY;
+        const order: TrickId[] =
+          brakeIn > 0 ? ["frontflip", "backflip", "superman", "spin", "nohand"]
+          : Math.abs(rawSteer) > 0.3 ? ["spin", "backflip", "frontflip", "superman", "nohand"]
+          : ["frontflip", "backflip", "superman", "spin", "nohand"];
+        const fits = order.filter((id) => TRICK_MAP[id].dur * 0.86 <= tLand);
+        pick = fits.find((id) => !s.combo.includes(id)) ?? fits[0] ?? null;
+        if (!pick) popups.push({ text: "더 높이 날아야 묘기를 할 수 있어요!", kind: "bonus" });
+      }
+      if (pick) {
+        anim.trick = pick;
+        anim.trickAt = t;
+        sendTrick(pick);
+      }
     } else if (want && t - trickQueue.at > 0.4) {
       trickQueue.id = null;
-      if (s.grounded && !stunned) popups.push({ text: "점프해서 공중에서 묘기! (Space)", kind: "bonus" });
     }
     if (anim.trick) {
       const p = (t - anim.trickAt) / TRICK_MAP[anim.trick].dur;

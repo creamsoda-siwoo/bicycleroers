@@ -75,7 +75,7 @@ export const TRICKS: { id: TrickId; name: string; icon: string; key: string; dur
   { id: "frontflip", name: "프론트플립", icon: "🔃", key: "F", dur: 0.95, pts: 600 },
   { id: "spin", name: "360 스핀", icon: "🌀", key: "E", dur: 0.7, pts: 300 },
   { id: "superman", name: "슈퍼맨", icon: "🦸", key: "G", dur: 0.8, pts: 400 },
-  { id: "nohand", name: "노핸드", icon: "🙌", key: "R", dur: 0.6, pts: 200 },
+  { id: "nohand", name: "노핸드", icon: "🙌", key: "R", dur: 0.4, pts: 200 },
 ];
 
 export const TRICK_MAP = Object.fromEntries(TRICKS.map((t) => [t.id, t])) as Record<TrickId, (typeof TRICKS)[number]>;

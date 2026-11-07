@@ -1,7 +1,7 @@
 import type { TrickId } from "@/lib/profile";
 
 // 키보드 + 터치 입력 공유 상태
-export const input = { f: false, b: false, l: false, r: false, jump: false };
+export const input = { f: false, b: false, l: false, r: false, jump: false, jumpTaps: 0 };
 
 /** 아날로그 입력 (조이스틱·게임패드). active 일 때 키보드 방향 대신 사용 */
 export const axis = {
@@ -13,9 +13,10 @@ export const axis = {
   padActive: false,
 };
 /** 다음 프레임에 시도할 묘기 */
-export const trickQueue: { id: TrickId | null; at: number } = { id: null, at: 0 };
+/** "auto" = 남은 체공 시간에 맞는 묘기를 자동 선택 */
+export const trickQueue: { id: TrickId | "auto" | null; at: number } = { id: null, at: 0 };
 
-export function queueTrick(id: TrickId) {
+export function queueTrick(id: TrickId | "auto" = "auto") {
   trickQueue.id = id;
   trickQueue.at = performance.now() / 1000;
 }
@@ -38,17 +39,18 @@ export function bindKeyboard(onKey: (code: string) => void) {
     if (isTyping(e)) return;
     const k = MAP[e.code];
     if (k) {
-      input[k] = true;
+      if (k === "jump" && !e.repeat) input.jumpTaps++;
+      (input as Record<string, boolean | number>)[k] = true;
       e.preventDefault();
     }
     onKey(e.code);
   };
   const up = (e: KeyboardEvent) => {
     const k = MAP[e.code];
-    if (k) input[k] = false;
+    if (k) (input as Record<string, boolean | number>)[k] = false;
   };
   const blur = () => {
-    (Object.keys(input) as (keyof typeof input)[]).forEach((k) => (input[k] = false));
+    input.f = input.b = input.l = input.r = input.jump = false;
   };
   window.addEventListener("keydown", down);
   window.addEventListener("keyup", up);
@@ -93,7 +95,10 @@ export function pollGamepad(): number[] {
   const fresh: number[] = [];
   for (let i = 0; i < pad.buttons.length; i++) {
     const p = pressed(i);
-    if (p && !prevPad[i]) fresh.push(i);
+    if (p && !prevPad[i]) {
+      fresh.push(i);
+      if (i === 0) input.jumpTaps++;
+    }
     prevPad[i] = p;
   }
   return fresh;
