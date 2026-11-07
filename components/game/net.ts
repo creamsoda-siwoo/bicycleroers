@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase, type ChatMsg } from "@/lib/supabase";
-import type { EmoteId, Profile, TrickId } from "@/lib/profile";
+import { cleanBikeName, type EmoteId, type Profile, type TrickId } from "@/lib/profile";
 import { newAnim, now, type AnimState } from "../three/anim";
 
 export interface NetPlayer extends Profile {
@@ -41,7 +41,16 @@ export interface Bubble {
 
 const CHANNEL = "bicycleroers-world";
 
+export interface Poke {
+  from: string;
+  fromName: string;
+  to: string;
+  kind: "wave" | "hf_req" | "hf_ok" | "gift";
+  amount?: number;
+}
+
 export interface RaceEvents {
+  onPoke?: (p: Poke) => void;
   onInvite?: (p: { hostId: string; hostName: string; inSec: number }) => void;
   onJoin?: (p: { id: string; nickname: string }) => void;
   onFinish?: (p: { id: string; nickname: string; ms: number }) => void;
@@ -92,7 +101,11 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
       for (const [key, metas] of Object.entries(state)) {
         if (key === myId || !metas[0]) continue;
         const m = metas[0];
-        list.push({ id: key, nickname: m.nickname, color: m.color, hat: m.hat, bike: m.bike, equip: m.equip ?? {} });
+        list.push({
+          id: key, nickname: m.nickname, color: m.color, hat: m.hat, bike: m.bike, equip: m.equip ?? {},
+          bikeName: m.bikeName ? cleanBikeName(String(m.bikeName)) : undefined,
+          pid: typeof m.pid === "string" ? m.pid : undefined,
+        });
         ensure(key);
       }
       for (const id of [...remotes.current.keys()]) {
@@ -144,6 +157,10 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
       bellRef.current?.(p.id);
     });
 
+    ch.on("broadcast", { event: "poke" }, ({ payload }) => {
+      const p = payload as Poke;
+      if (p && p.to === myId) raceRef.current?.onPoke?.(p);
+    });
     ch.on("broadcast", { event: "race_invite" }, ({ payload }) => raceRef.current?.onInvite?.(payload as { hostId: string; hostName: string; inSec: number }));
     ch.on("broadcast", { event: "race_join" }, ({ payload }) => raceRef.current?.onJoin?.(payload as { id: string; nickname: string }));
     ch.on("broadcast", { event: "race_finish" }, ({ payload }) => raceRef.current?.onFinish?.(payload as { id: string; nickname: string; ms: number }));
@@ -166,7 +183,7 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
       if (status === "SUBSCRIBED") {
         ready.current = true;
         setConnected(true);
-        await ch.track({ id: myId, nickname: profile.nickname, color: profile.color, hat: profile.hat, bike: profile.bike, equip: profile.equip ?? {} });
+        await ch.track({ id: myId, nickname: profile.nickname, color: profile.color, hat: profile.hat, bike: profile.bike, equip: profile.equip ?? {}, bikeName: profile.bikeName ?? "", pid: profile.pid ?? "" });
       } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         ready.current = false;
         setConnected(false);
@@ -215,6 +232,11 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
     chRef.current.send({ type: "broadcast", event: "bell", payload: { id: myId } });
   }, [myId, showBubble]);
 
+  const sendPoke = useCallback((p: Omit<Poke, "from">) => {
+    if (!ready.current || !chRef.current) return;
+    chRef.current.send({ type: "broadcast", event: "poke", payload: { ...p, from: myId } });
+  }, [myId]);
+
   const sendRace = useCallback((event: "race_invite" | "race_join" | "race_finish", payload: Record<string, unknown>) => {
     if (!ready.current || !chRef.current) return;
     chRef.current.send({ type: "broadcast", event, payload });
@@ -235,5 +257,5 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
     });
   }, [myId, profile, showBubble]);
 
-  return { remotes, players, messages, bubbles, connected, sendMove, sendEmote, sendTrick, sendBell, sendRace, sendChat };
+  return { remotes, players, messages, bubbles, connected, sendMove, sendEmote, sendTrick, sendBell, sendRace, sendPoke, sendChat };
 }

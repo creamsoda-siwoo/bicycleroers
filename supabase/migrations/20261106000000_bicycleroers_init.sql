@@ -35,3 +35,6 @@ create index if not exists bike_rides_trick_idx on public.bike_rides (trick_scor
 
 -- 3번째: 플레이어 저장·상점 (bike_players, bike_items, RPC 함수)
 -- 실제 적용본은 Supabase 마이그레이션 bike_players_and_shop, bike_progress_rate_limit 참고
+
+-- 별 선물: bike_gift(p_id, p_token, p_to, p_amount) — 실제 적용본은 Supabase 마이그레이션 bike_gift_stars 참고
+-- 타임어택 맵 목록에 desert 추가: bike_times_allow_desert

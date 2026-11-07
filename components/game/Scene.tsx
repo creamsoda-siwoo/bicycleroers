@@ -19,7 +19,7 @@ import type { Bubble, MovePayload, NetPlayer, Remote } from "./net";
 import { ghost, group, race, raceResults, saveGhost } from "./state";
 export { race, raceResults };
 
-export const stats = { speed: 0, dist: 0, stars: 0, x: 0, z: 0, trickScore: 0, airborne: false, boosting: false };
+export const stats = { speed: 0, dist: 0, stars: 0, x: 0, z: 0, trickScore: 0, airborne: false, boosting: false, drafting: false };
 
 /** 화면 가운데 띄울 알림 (묘기 점수 등) */
 export const popups: { text: string; kind: "trick" | "crash" | "bonus" }[] = [];
@@ -55,7 +55,9 @@ export function Player({
   sendMove,
   sendTrick,
   lowPower,
+  remotes,
 }: {
+  remotes?: React.RefObject<Map<string, Remote>>;
   sendTrick: (t: TrickId | "crash") => void;
   profile: Profile;
   anim: AnimState;
@@ -91,6 +93,7 @@ export function Player({
     hoopAt: map.hoops.map(() => -10),
     steer: 0,
     lastTaps: 0,
+    bumpAt: -10,
     yawRate: 0,
     drift: 0,
     driftStart: 0,
@@ -226,6 +229,26 @@ export function Player({
     if (boosting) cap = spec.maxSpeed * 1.6;
     cap *= 1 + Math.max(0, -slope) * 1.6; // 내리막에서는 더 빨리
     if (wet) cap = 2.5;
+    // 🌬️ 슬립스트림: 달리는 사람 바로 뒤를 따라가면 공기 저항이 줄어듦
+    let drafting = false;
+    if (remotes?.current && s.grounded && s.speed > 4) {
+      for (const r of remotes.current.values()) {
+        if (!r.seen || r.anim.speed < 4) continue;
+        const fx = Math.sin(r.cur.h);
+        const fz = Math.cos(r.cur.h);
+        const dx = s.x - r.cur.x;
+        const dz = s.z - r.cur.z;
+        const behind = -(dx * fx + dz * fz);
+        const lateral = Math.abs(dx * fz - dz * fx);
+        const aligned = Math.cos(s.h - r.cur.h) > 0.8;
+        if (behind > 1.2 && behind < 9 && lateral < 1.4 && aligned && Math.abs(s.y - r.cur.y) < 1.5) {
+          drafting = true;
+          break;
+        }
+      }
+    }
+    stats.drafting = drafting;
+    if (drafting) cap *= 1.14;
     const v = Math.abs(s.speed);
     if (s.grounded && !stunned) s.speed -= 9 * slope * dt;
 
@@ -248,7 +271,7 @@ export function Player({
       }
       // 구름 저항 + 공기 저항 (관성으로 부드럽게 굴러감)
       const roll = icy ? 0.08 : paved ? 0.35 : 0.9;
-      const drag = roll + 0.0045 * v * v;
+      const drag = roll + (drafting ? 0.0015 : 0.0045) * v * v;
       if (s.speed > 0) s.speed = Math.max(throttle > 0 || brakeIn > 0 ? -99 : 0, s.speed - drag * dt);
       else if (s.speed < 0) s.speed = Math.min(0, s.speed + (drag + 1) * dt);
     } else {
@@ -296,6 +319,29 @@ export function Player({
     }
     const moveWant = Math.hypot(s.x - px, s.z - pz);
     resolveCollisions(s, 0.55);
+    // 💥 다른 라이더와 부딪힘: 서로 밀려남
+    if (remotes?.current) {
+      for (const r of remotes.current.values()) {
+        if (!r.seen) continue;
+        const dx = s.x - r.cur.x;
+        const dz = s.z - r.cur.z;
+        const d = Math.hypot(dx, dz);
+        if (d < 1.1 && d > 0.001 && Math.abs(s.y - r.cur.y) < 1.2) {
+          const push = (1.1 - d) / d;
+          s.x += dx * push;
+          s.z += dz * push;
+          const rel = Math.hypot(s.vx - Math.sin(r.cur.h) * r.anim.speed, s.vz - Math.cos(r.cur.h) * r.anim.speed);
+          if (rel > 4 && t - s.bumpAt > 0.6) {
+            s.bumpAt = t;
+            s.speed *= 0.75;
+            s.shake = Math.max(s.shake, Math.min(0.3, rel * 0.03));
+            anim.squash = Math.max(anim.squash, 0.4);
+            sfx("land");
+            popups.push({ text: "💥 쿵!", kind: "crash" });
+          }
+        }
+      }
+    }
     const got = Math.hypot(s.x - px, s.z - pz);
     if (moveWant > 0.0001 && got < moveWant * 0.6) s.speed *= 0.92;
 
@@ -647,7 +693,17 @@ export function Player({
   );
 }
 
-export function RemoteRider({ player, remote, bubble }: { player: NetPlayer; remote: Remote | undefined; bubble: string | null }) {
+export function RemoteRider({
+  player,
+  remote,
+  bubble,
+  onSelect,
+}: {
+  player: NetPlayer;
+  remote: Remote | undefined;
+  bubble: string | null;
+  onSelect?: (id: string) => void;
+}) {
   const outer = useRef<THREE.Group>(null);
   const pitchG = useRef<THREE.Group>(null);
   const pitch = useRef(0);
@@ -686,7 +742,21 @@ export function RemoteRider({ player, remote, bubble }: { player: NetPlayer; rem
   if (!remote) return null;
   return (
     <>
-      <group ref={outer} visible={false}>
+      <group
+        ref={outer}
+        visible={false}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect?.(player.id);
+        }}
+        onPointerOver={() => (document.body.style.cursor = "pointer")}
+        onPointerOut={() => (document.body.style.cursor = "")}
+      >
+        {/* 누르기 쉬운 투명 영역 */}
+        <mesh position={[0, 1, 0]} visible={false}>
+          <boxGeometry args={[1.4, 2.2, 2]} />
+          <meshBasicMaterial />
+        </mesh>
         <group ref={pitchG}>
           <Rider profile={player} anim={remote.anim} label bubble={bubble} />
         </group>

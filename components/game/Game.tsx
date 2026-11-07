@@ -6,7 +6,7 @@ import { Canvas } from "@react-three/fiber";
 import { getBike } from "@/lib/bikes";
 import { EMOTES, loadProfile, type EmoteId, type Profile } from "@/lib/profile";
 import { supabase } from "@/lib/supabase";
-import { ensurePlayer, saveProgress, saveProgressOnExit, type ProgressDelta } from "@/lib/player";
+import { ensurePlayer, giftStars, saveProgress, saveProgressOnExit, type ProgressDelta } from "@/lib/player";
 import { World } from "../three/World";
 import { newAnim, now } from "../three/anim";
 import { GhostRider, Player, RemoteRider, fmtTime, popups, stats, view } from "./Scene";
@@ -90,7 +90,7 @@ export default function Game() {
     loadGhost(profile.map ?? "village");
     ensurePlayer(profile.nickname)
       .then((pl) => {
-        setProfile((p) => (p ? { ...p, equip: pl.equipped } : p));
+        setProfile((p) => (p ? { ...p, equip: pl.equipped, pid: pl.id, bikeName: p.bikeNames?.[p.bike] ?? p.bikeName } : p));
         setWallet(pl.stars);
       })
       .catch(() => setWallet(null))
@@ -116,6 +116,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
       sfx("bell", 1 - d / 60);
     },
     {
+      onPoke: (p) => handlePoke.current(p),
       onInvite: (p) => {
         if (group.phase !== "idle" && group.phase !== "done") return;
         group.phase = "invited";
@@ -142,7 +143,71 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
       },
     },
   );
-  const { sendRace } = net;
+  const { sendRace, sendPoke } = net;
+
+  // ── 🤝 상호작용 ──
+  const [selected, setSelected] = useState<string | null>(null);
+  const [hfReq, setHfReq] = useState<{ from: string; name: string; at: number } | null>(null);
+  const [busyGift, setBusyGift] = useState(false);
+  const lastPoke = useRef(0);
+  const pushToast = (text: string, kind: "trick" | "crash" | "bonus" = "bonus") => popups.push({ text, kind });
+  const distTo = (id: string) => {
+    const r = net.remotes.current.get(id);
+    return r ? Math.hypot(r.cur.x - stats.x, r.cur.z - stats.z) : 999;
+  };
+  const doHighFive = (otherName: string) => {
+    anim.emote = "cheer";
+    anim.emoteAt = now();
+    net.sendEmote("cheer");
+    stats.stars += 1;
+    sfx("ring");
+    pushToast(`🖐️ ${otherName}님과 하이파이브! ⭐+1`, "trick");
+  };
+  const handlePoke = useRef<(p: import("./net").Poke) => void>(() => {});
+  handlePoke.current = (p) => {
+    if (p.kind === "wave") {
+      pushToast(`👋 ${p.fromName}님이 인사했어요!`);
+      sfx("checkpoint");
+    } else if (p.kind === "hf_req") {
+      setHfReq({ from: p.from, name: p.fromName, at: Date.now() });
+      sfx("bell");
+    } else if (p.kind === "hf_ok") {
+      doHighFive(p.fromName);
+    } else if (p.kind === "gift" && p.amount) {
+      setWalletBase((w) => (w === null ? w : w + (p.amount ?? 0)));
+      pushToast(`🎁 ${p.fromName}님이 별 ${p.amount}개를 선물했어요!`, "trick");
+      sfx("buy");
+    }
+  };
+  const poke = (id: string, kind: "wave" | "hf_req") => {
+    if (Date.now() - lastPoke.current < 1500) return;
+    lastPoke.current = Date.now();
+    const name = net.players.find((x) => x.id === id)?.nickname ?? "";
+    if (kind === "wave") {
+      doEmote("wave");
+      pushToast(`👋 ${name}님에게 인사했어요`);
+    } else {
+      pushToast(`🖐️ ${name}님에게 하이파이브를 청했어요`);
+    }
+    sendPoke({ fromName: profile.nickname, to: id, kind });
+  };
+  const sendGift = async (id: string, amount: number) => {
+    const target = net.players.find((x) => x.id === id);
+    if (!target?.pid || busyGift) return;
+    setBusyGift(true);
+    try {
+      await autosave(false); // 방금 주운 별부터 저장
+      const me = await giftStars(target.pid, amount);
+      setWalletBase(me.stars + (stats.stars - saved.current.stars));
+      sendPoke({ fromName: profile.nickname, to: id, kind: "gift", amount });
+      pushToast(`🎁 ${target.nickname}님에게 별 ${amount}개를 선물했어요`, "trick");
+      sfx("buy");
+    } catch (e) {
+      pushToast(`😢 ${(e as Error).message}`, "crash");
+    } finally {
+      setBusyGift(false);
+    }
+  };
 
   const openRace = () => {
     if (group.phase !== "idle" && group.phase !== "done") return;
@@ -535,9 +600,9 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
         <ambientLight intensity={0.35} />
         <World />
         <GhostRider />
-        <Player profile={profile} anim={anim} myId={myId} lowPower={isTouch} bubble={bubbleOf(myId)} sendMove={net.sendMove} sendTrick={net.sendTrick} />
+        <Player profile={profile} anim={anim} myId={myId} lowPower={isTouch} bubble={bubbleOf(myId)} sendMove={net.sendMove} sendTrick={net.sendTrick} remotes={net.remotes} />
         {net.players.map((p) => (
-          <RemoteRider key={p.id} player={p} remote={net.remotes.current.get(p.id)} bubble={bubbleOf(p.id)} />
+          <RemoteRider key={p.id} player={p} remote={net.remotes.current.get(p.id)} bubble={bubbleOf(p.id)} onSelect={(id) => { setSelected(id); setMenuOpen(false); }} />
         ))}
       </Canvas>
 
@@ -568,8 +633,10 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
             <li><b>{profile.nickname}</b> (나)</li>
             {net.players.slice(0, 8).map((p) => (
               <li key={p.id}>
-                <span className="dot" style={{ background: p.color }} />
-                {getBike(p.bike).emoji} {p.nickname}
+                <button className="linkish" onClick={() => setSelected(p.id)}>
+                  <span className="dot" style={{ background: p.color }} />
+                  {getBike(p.bike).emoji} {p.nickname}
+                </button>
               </li>
             ))}
             {net.players.length > 8 && <li className="muted">외 {net.players.length - 8}명</li>}
@@ -626,9 +693,14 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
               </div>
               <div className="m-players">
                 {[{ id: "me", nickname: profile.nickname, color: profile.color, bike: profile.bike }, ...net.players].slice(0, 12).map((p) => (
-                  <span key={p.id} className="m-player">
+                  <button
+                    key={p.id}
+                    className="m-player"
+                    disabled={p.id === "me"}
+                    onClick={() => { setSelected(p.id); setMenuOpen(false); }}
+                  >
                     <span className="dot" style={{ background: p.color }} />{getBike(p.bike).emoji} {p.nickname}
-                  </span>
+                  </button>
                 ))}
               </div>
               <div className="m-sheet-btns">
@@ -669,6 +741,56 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
           {hud.raceBest > 0 && !(isTouch && hud.raceOn) && <span className="best">최고 {fmtTime(hud.raceBest)}</span>}
         </div>
       )}
+
+      {/* 🤝 상호작용 */}
+      {selected && (() => {
+        const tp = net.players.find((x) => x.id === selected);
+        if (!tp) return null;
+        const d = Math.round(distTo(tp.id));
+        const near = d < 12;
+        return (
+          <div className="interact panel">
+            <div className="interact-head">
+              <span className="dot" style={{ background: tp.color }} />
+              <b>{getBike(tp.bike).emoji} {tp.nickname}</b>
+              {tp.bikeName && <span className="muted">「{tp.bikeName}」</span>}
+              <span className="muted">· {d < 999 ? `${d}m` : "멀리"}</span>
+              <button className="x" aria-label="닫기" onClick={() => setSelected(null)}>✕</button>
+            </div>
+            <div className="interact-btns">
+              <button className="btn small ghost" onClick={() => poke(tp.id, "wave")}>👋 인사</button>
+              <button className="btn small ghost" disabled={!near} onClick={() => poke(tp.id, "hf_req")} title={near ? "" : "12m 안으로 가까이 가야 해요"}>
+                🖐️ 하이파이브{!near && " (가까이!)"}
+              </button>
+            </div>
+            <div className="interact-btns">
+              <span className="muted">🎁 별 선물</span>
+              {[1, 5, 10].map((n) => (
+                <button key={n} className="btn small buy" disabled={busyGift || !tp.pid || (walletNow ?? 0) < n} onClick={() => sendGift(tp.id, n)}>
+                  ⭐{n}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+      {hfReq && Date.now() - hfReq.at < 10000 && (
+        <div className="group-banner hf">
+          <span>🖐️ <b>{hfReq.name}</b>님이 하이파이브를 청해요!</span>
+          <button
+            className="btn small"
+            onClick={() => {
+              sendPoke({ fromName: profile.nickname, to: hfReq.from, kind: "hf_ok" });
+              doHighFive(hfReq.name);
+              setHfReq(null);
+            }}
+          >
+            🖐️ 짝!
+          </button>
+          <button className="btn small ghost" onClick={() => setHfReq(null)}>다음에</button>
+        </div>
+      )}
+      {stats.drafting && <div className="draft-tag">🌬️ 슬립스트림</div>}
 
       {/* 다 같이 레이스 */}
       {group.phase === "invited" && (

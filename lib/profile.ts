@@ -13,6 +13,12 @@ export interface Profile {
   equip?: Equipped;
   /** 선택한 맵 */
   map?: "village" | "snow" | "desert";
+  /** 자전거 종류별로 지은 이름 */
+  bikeNames?: Partial<Record<BikeId, string>>;
+  /** 지금 타는 자전거 이름 (게임 중 표시용) */
+  bikeName?: string;
+  /** 서버 플레이어 id (별 선물용, 공개해도 됨) */
+  pid?: string;
 }
 
 export const COLORS = [
@@ -79,3 +85,12 @@ export const TRICKS: { id: TrickId; name: string; icon: string; key: string; dur
 ];
 
 export const TRICK_MAP = Object.fromEntries(TRICKS.map((t) => [t.id, t])) as Record<TrickId, (typeof TRICKS)[number]>;
+
+export function cleanBikeName(s: string) {
+  return s.replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, 12);
+}
+
+/** 이름표에 쓸 표시 이름 */
+export function displayName(p: Pick<Profile, "nickname" | "bikeName">, emoji: string) {
+  return p.bikeName ? `${emoji} ${p.nickname} · 「${p.bikeName}」` : `${emoji} ${p.nickname}`;
+}

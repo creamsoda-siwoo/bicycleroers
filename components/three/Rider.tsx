@@ -8,7 +8,7 @@ import type { Profile } from "@/lib/profile";
 import { Bike } from "./Bike";
 import { Character } from "./Character";
 import { CRASH_DUR, now, type AnimState } from "./anim";
-import { TRICK_MAP } from "@/lib/profile";
+import { TRICK_MAP, displayName } from "@/lib/profile";
 import { Label } from "./Label";
 
 /** 자전거 + 캐릭터 + 이름표/말풍선 */
@@ -75,7 +75,7 @@ export function Rider({
         </group>
       </group>
       {(label || bubble !== undefined) && (
-        <Label y={2.25} name={label ? `${spec.emoji} ${profile.nickname}` : undefined} bubble={bubble} me={me} />
+        <Label y={2.25} name={label ? displayName(profile, spec.emoji) : undefined} bubble={bubble} me={me} />
       )}
     </group>
   );

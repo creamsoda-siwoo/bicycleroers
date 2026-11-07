@@ -443,3 +443,22 @@ kbd {
 .touch-ui .group-results { top: calc(104px + env(safe-area-inset-top)); right: 8px; width: 180px; font-size: 12px; padding: 6px 10px; }
 .touch-ui .countdown { font-size: 96px; }
 .m-sheet-btns .btn:last-child { grid-column: 1 / -1; }
+
+.bike-name { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 13px; font-weight: 700; }
+.bike-name input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 10px; border: 2px solid var(--line); font-size: 15px; outline: none; }
+.bike-name input:focus { border-color: var(--accent2); }
+
+/* 상호작용 */
+.interact { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); width: min(92vw, 380px); z-index: 45; display: flex; flex-direction: column; gap: 8px; font-size: 13px; animation: pop 0.2s ease-out; }
+.interact-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.interact-head .x { margin-left: auto; border: none; background: none; font-size: 16px; }
+.interact-btns { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.interact-btns .btn.ghost { flex: 1; }
+.touch-ui .interact { bottom: auto; top: calc(110px + env(safe-area-inset-top)); }
+.group-banner.hf { top: 110px; }
+.touch-ui .group-banner.hf { top: calc(60px + env(safe-area-inset-top)); }
+.draft-tag { position: absolute; top: 46%; left: 50%; transform: translateX(-50%); background: rgba(76, 201, 240, 0.85); color: #fff; font-weight: 700; padding: 4px 14px; border-radius: 99px; font-size: 14px; pointer-events: none; animation: pop 0.2s ease-out; }
+.linkish { border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.linkish:hover { color: var(--accent); }
+button.m-player { border: 1px solid var(--line); background: #fff; border-radius: 99px; padding: 3px 9px; font-size: 12px; }
+button.m-player:disabled { opacity: 0.7; }

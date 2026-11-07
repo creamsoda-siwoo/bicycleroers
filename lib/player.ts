@@ -74,6 +74,13 @@ export async function buyItem(itemId: string): Promise<PlayerData> {
   return strip(data as PlayerData);
 }
 
+export async function giftStars(toPid: string, amount: number): Promise<PlayerData> {
+  const c = cred();
+  const { data, error } = await supabase.rpc("bike_gift", { p_id: c.id, p_token: c.token, p_to: toPid, p_amount: amount });
+  if (error) throw new Error(error.message);
+  return strip(data as PlayerData);
+}
+
 export async function equipItem(slot: string, itemId: string | null): Promise<PlayerData> {
   const c = cred();
   const { data, error } = await supabase.rpc("bike_equip", { p_id: c.id, p_token: c.token, p_slot: slot, p_item: itemId });

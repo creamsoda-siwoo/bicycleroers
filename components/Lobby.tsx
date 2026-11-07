@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { BIKES, getBike } from "@/lib/bikes";
 import {
-  COLORS, DEFAULT_PROFILE, EMOTES, HATS, loadProfile, saveProfile, type Profile,
+  COLORS, DEFAULT_PROFILE, EMOTES, HATS, cleanBikeName, loadProfile, saveProfile, type Profile,
 } from "@/lib/profile";
 import { supabase, type RideRecord } from "@/lib/supabase";
 import { newAnim, now } from "./three/anim";
@@ -85,7 +85,10 @@ export default function Lobby() {
       setError("닉네임은 16자까지 가능해요.");
       return;
     }
-    saveProfile({ ...p, nickname, equip: player?.equipped ?? {} });
+    const bikeNames = Object.fromEntries(
+      Object.entries(p.bikeNames ?? {}).map(([k, v]) => [k, cleanBikeName(v ?? "")]).filter(([, v]) => v),
+    );
+    saveProfile({ ...p, nickname, bikeNames, bikeName: bikeNames[p.bike], equip: player?.equipped ?? {}, pid: player?.id });
     router.push("/ride");
   };
 
@@ -182,6 +185,15 @@ export default function Lobby() {
                 </button>
               ))}
             </div>
+            <label className="bike-name">
+              <span>🏷️ 이 자전거 이름</span>
+              <input
+                value={p.bikeNames?.[p.bike] ?? ""}
+                maxLength={12}
+                placeholder={`예: 번개호, 씽씽${bike.name.slice(0, 2)}`}
+                onChange={(e) => set({ bikeNames: { ...(p.bikeNames ?? {}), [p.bike]: e.target.value.slice(0, 12) } })}
+              />
+            </label>
             <div className="stats">
               <div>속도 <Bar value={bike.maxSpeed} max={16} /></div>
               <div>가속 <Bar value={bike.accel} max={9} /></div>
