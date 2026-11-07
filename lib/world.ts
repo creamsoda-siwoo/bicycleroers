@@ -293,4 +293,4 @@ export function randomStarPos(): [number, number] {
   return [10, 10];
 }
 
-export const SPAWN = { x: 0, z: -TRACK_RADIUS, heading: Math.PI / 2 };
+export const SPAWN = { x: -9, z: -TRACK_RADIUS + 0.7, heading: Math.PI / 2 };

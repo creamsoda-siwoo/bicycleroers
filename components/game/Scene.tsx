@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { getBike } from "@/lib/bikes";
@@ -10,13 +10,13 @@ import { sfx } from "@/lib/sound";
 import { Rider } from "../three/Rider";
 import { Trail } from "../three/Custom";
 import { stars } from "../three/World";
-import { CRASH_DUR, now, type AnimState } from "../three/anim";
+import { CRASH_DUR, newAnim, now, type AnimState } from "../three/anim";
 import { axis, input, pollGamepad, queueTrick, trickQueue } from "./input";
 import { addSkid } from "../three/Skids";
 import { setSkid, setWind } from "@/lib/sound";
 import type { Bubble, MovePayload, NetPlayer, Remote } from "./net";
 
-import { race, raceResults } from "./state";
+import { ghost, group, race, raceResults, saveGhost } from "./state";
 export { race, raceResults };
 
 export const stats = { speed: 0, dist: 0, stars: 0, x: 0, z: 0, trickScore: 0, airborne: false, boosting: false };
@@ -128,16 +128,56 @@ export function Player({
     race.last = sec;
     const best = !race.best || sec < race.best;
     if (best) race.best = sec;
-    raceResults.push(Math.round(sec * 1000));
-    popups.push({ text: `🏁 ${fmtTime(sec)}${best ? "  최고 기록!" : ""}`, kind: "trick" });
+    const ms = Math.round(sec * 1000);
+    raceResults.push(ms);
+    // 고스트: 이 맵에서 내 역대 최고면 주행 기록 저장
+    const ghostBest = !ghost.best || ms < ghost.best.ms;
+    if (ghostBest && ghost.recording.length > 5) {
+      saveGhost(map.id, { ms, frames: ghost.recording.slice(), bike: profile.bike, color: profile.color, hat: profile.hat });
+    }
+    if (group.phase === "racing") group.myFinish = ms;
+    popups.push({ text: `🏁 ${fmtTime(sec)}${ghostBest ? "  👻 고스트 갱신!" : best ? "  최고 기록!" : ""}`, kind: "trick" });
     sfx("finish");
   };
+  const startRun = (t: number) => {
+    race.running = true;
+    race.start = t;
+    race.next = 1;
+    race.total = map.course.gates.length;
+    ghost.recording = [];
+    s_lastRec.current = -1;
+  };
+  const s_lastRec = useRef(-1);
 
   useFrame((_, dtRaw) => {
     const dt = Math.min(dtRaw, 0.05);
     const s = st.current;
     const t = now();
-    const stunned = t < s.stunUntil;
+    // ── 다 같이 레이스: 출발선 이동, 카운트다운 동안 정지, 출발 ──
+    if (group.phase === "waiting" && !group.teleported && t >= group.goAt - 6) {
+      const g0 = map.course.gates[0];
+      const back = 5 + Math.floor(group.slot / 2) * 3.2;
+      const side = (group.slot % 2 ? 1 : -1) * 1.8;
+      s.x = g0.x - Math.sin(g0.heading) * back + Math.cos(g0.heading) * side;
+      s.z = g0.z - Math.cos(g0.heading) * back - Math.sin(g0.heading) * side;
+      s.h = g0.heading;
+      s.y = groundHeight(s.x, s.z);
+      s.speed = s.vx = s.vz = s.vy = 0;
+      s.grounded = true;
+      race.running = false;
+      race.next = 0;
+      group.teleported = true;
+    }
+    const frozen = group.phase === "waiting" && group.teleported && t < group.goAt;
+    if (frozen) {
+      s.speed = s.vx = s.vz = 0;
+    }
+    if (group.phase === "waiting" && group.teleported && t >= group.goAt) {
+      group.phase = "racing";
+      startRun(group.goAt);
+      sfx("finish");
+    }
+    const stunned = t < s.stunUntil || frozen;
     const bowing = (anim.emote === "bow" && t - anim.emoteAt < EMOTE_DUR.bow) || stunned;
 
     // ── 부스터 ──
@@ -448,15 +488,19 @@ export function Player({
     const gate = course.gates[race.next];
     if (gate && Math.hypot(gate.x - s.x, gate.z - s.z) < gate.w / 2 + 0.5) {
       const n = course.gates.length;
-      if (race.next === 0) {
+      if (race.next === 0 && group.phase !== "waiting") {
         if (race.running && course.kind === "lap") {
           finishRace(t);
         }
-        race.running = true;
-        race.start = t;
-        race.next = 1;
-        race.total = n;
-        if (course.kind === "run" || !race.last) popups.push({ text: `⏱️ ${course.name} 시작!`, kind: "bonus" });
+        if (group.phase === "racing" && group.myFinish !== null) {
+          // 다 같이 레이스는 한 바퀴로 끝
+          race.running = false;
+          race.next = -1;
+        } else {
+          startRun(t);
+        }
+        if (race.running && (course.kind === "run" || !race.last)) popups.push({ text: `⏱️ ${course.name} 시작!`, kind: "bonus" });
+        void n;
         sfx("checkpoint");
       } else if (race.running) {
         race.next += 1;
@@ -464,7 +508,7 @@ export function Player({
           if (course.kind === "run") {
             finishRace(t);
             race.running = false;
-            race.next = 0;
+            race.next = group.phase === "racing" ? -1 : 0;
           } else {
             race.next = 0; // 출발선으로 돌아가면 완주
           }
@@ -487,6 +531,11 @@ export function Player({
           race.next = 0;
         }
       }
+    }
+    if (race.running && t - s_lastRec.current > 0.1) {
+      s_lastRec.current = t;
+      ghost.recording.push({ t: +(t - race.start).toFixed(2), x: +s.x.toFixed(2), y: +s.y.toFixed(2), z: +s.z.toFixed(2), h: +s.h.toFixed(3) });
+      if (ghost.recording.length > 6000) ghost.recording.length = 0;
     }
     if (race.running && t - race.start > 600) {
       race.running = false;
@@ -648,3 +697,81 @@ export function RemoteRider({ player, remote, bubble }: { player: NetPlayer; rem
 }
 
 export type { Bubble };
+
+/** 👻 내 최고 기록 주행을 반투명하게 재생 */
+export function GhostRider() {
+  const outer = useRef<THREE.Group>(null);
+  const anim = useRef(newAnim()).current;
+  const best = ghost.best;
+  const profile = useMemo<Profile | null>(
+    () => (best ? { nickname: `👻 ${fmtTime(best.ms / 1000)}`, color: best.color, hat: best.hat as Profile["hat"], bike: best.bike as Profile["bike"] } : null),
+    [best],
+  );
+  const idx = useRef(0);
+  const prev = useRef({ x: 0, z: 0 });
+
+  useEffect(() => {
+    // 모든 재질을 반투명하게
+    const g = outer.current;
+    if (!g) return;
+    const id = setInterval(() => {
+      g.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+        if (!m) return;
+        for (const mm of Array.isArray(m) ? m : [m]) {
+          if (!mm.userData.ghost) {
+            mm.userData.ghost = true;
+            mm.transparent = true;
+            mm.opacity = 0.38;
+            mm.depthWrite = false;
+          }
+        }
+        (o as THREE.Mesh).castShadow = false;
+      });
+    }, 500);
+    return () => clearInterval(id);
+  }, [profile]);
+
+  useFrame((_, dtRaw) => {
+    const g = outer.current;
+    if (!g) return;
+    const b = ghost.best;
+    if (!b || !race.running || b.frames.length < 2) {
+      g.visible = false;
+      idx.current = 0;
+      return;
+    }
+    const tt = now() - race.start;
+    const f = b.frames;
+    if (idx.current >= f.length - 1 || f[idx.current].t > tt) idx.current = 0;
+    while (idx.current < f.length - 2 && f[idx.current + 1].t < tt) idx.current++;
+    const a = f[idx.current];
+    const c = f[idx.current + 1];
+    if (tt > f[f.length - 1].t) {
+      g.visible = false;
+      return;
+    }
+    const k = Math.max(0, Math.min(1, (tt - a.t) / Math.max(0.001, c.t - a.t)));
+    const x = a.x + (c.x - a.x) * k;
+    const z = a.z + (c.z - a.z) * k;
+    let dh = c.h - a.h;
+    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    g.visible = true;
+    g.position.set(x, a.y + (c.y - a.y) * k, z);
+    g.rotation.y = a.h + dh * k;
+    const dt = Math.max(0.001, Math.min(dtRaw, 0.05));
+    const sp = Math.hypot(x - prev.current.x, z - prev.current.z) / dt;
+    prev.current = { x, z };
+    anim.speed = Math.min(40, sp);
+    anim.dist += anim.speed * dt;
+    const spec = getBike(b.bike);
+    anim.crank += (anim.speed / spec.wheel / spec.gear) * dt;
+  });
+
+  if (!profile) return null;
+  return (
+    <group ref={outer} visible={false}>
+      <Rider profile={profile} anim={anim} label />
+    </group>
+  );
+}

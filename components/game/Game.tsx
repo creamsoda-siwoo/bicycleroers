@@ -9,8 +9,8 @@ import { supabase } from "@/lib/supabase";
 import { ensurePlayer, saveProgress, saveProgressOnExit, type ProgressDelta } from "@/lib/player";
 import { World } from "../three/World";
 import { newAnim, now } from "../three/anim";
-import { Player, RemoteRider, fmtTime, popups, stats, view } from "./Scene";
-import { race, raceResults, resetRace } from "./state";
+import { GhostRider, Player, RemoteRider, fmtTime, popups, stats, view } from "./Scene";
+import { ghost, group, loadGhost, race, raceResults, resetGroup, resetRace } from "./state";
 import { getMap, setMap } from "@/lib/maps";
 import { isMuted, setMuted, sfx, unlockAudio } from "@/lib/sound";
 import type { Remote } from "./net";
@@ -86,6 +86,8 @@ export default function Game() {
     // 서버에 저장된 꾸미기·별 불러오기 (실패해도 게임은 진행)
     setMap(profile.map ?? "village");
     resetRace();
+    resetGroup();
+    loadGhost(profile.map ?? "village");
     ensurePlayer(profile.nickname)
       .then((pl) => {
         setProfile((p) => (p ? { ...p, equip: pl.equipped } : p));
@@ -104,11 +106,154 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
   const myId = useMemo(() => crypto.randomUUID(), []);
   const anim = useMemo(() => newAnim(), []);
   const remotesRef = useRef<Map<string, Remote> | null>(null);
-  const net = useNet(profile, myId, (id) => {
-    const r = remotesRef.current?.get(id);
-    const d = r ? Math.hypot(r.cur.x - stats.x, r.cur.z - stats.z) : 0;
-    sfx("bell", 1 - d / 60);
-  });
+  const [, force] = useState(0);
+  const net = useNet(
+    profile,
+    myId,
+    (id) => {
+      const r = remotesRef.current?.get(id);
+      const d = r ? Math.hypot(r.cur.x - stats.x, r.cur.z - stats.z) : 0;
+      sfx("bell", 1 - d / 60);
+    },
+    {
+      onInvite: (p) => {
+        if (group.phase !== "idle" && group.phase !== "done") return;
+        group.phase = "invited";
+        group.hostId = p.hostId;
+        group.hostName = p.hostName;
+        group.goAt = now() + p.inSec;
+        group.entries = [{ id: p.hostId, nickname: p.hostName }];
+        group.joined = false;
+        group.teleported = false;
+        group.myFinish = null;
+        sfx("bell");
+        force((n) => n + 1);
+      },
+      onJoin: (p) => {
+        if (group.phase === "idle") return;
+        if (!group.entries.some((e) => e.id === p.id)) group.entries.push({ id: p.id, nickname: p.nickname });
+        force((n) => n + 1);
+      },
+      onFinish: (p) => {
+        const e = group.entries.find((x) => x.id === p.id);
+        if (e) e.ms = p.ms;
+        else if (group.phase !== "idle") group.entries.push({ id: p.id, nickname: p.nickname, ms: p.ms });
+        force((n) => n + 1);
+      },
+    },
+  );
+  const { sendRace } = net;
+
+  const openRace = () => {
+    if (group.phase !== "idle" && group.phase !== "done") return;
+    resetGroup();
+    group.phase = "waiting";
+    group.hostId = myId;
+    group.hostName = profile.nickname;
+    group.goAt = now() + 15;
+    group.joined = true;
+    group.slot = 0;
+    group.entries = [{ id: myId, nickname: profile.nickname }];
+    sendRace("race_invite", { hostId: myId, hostName: profile.nickname, inSec: 15 });
+    setMenuOpen(false);
+    force((n) => n + 1);
+  };
+  const joinRace = () => {
+    if (group.phase !== "invited") return;
+    group.phase = "waiting";
+    group.joined = true;
+    group.slot = group.entries.length;
+    if (!group.entries.some((e) => e.id === myId)) group.entries.push({ id: myId, nickname: profile.nickname });
+    sendRace("race_join", { id: myId, nickname: profile.nickname });
+    force((n) => n + 1);
+  };
+
+  // 레이스 진행 관리: 초대 만료, 내 완주 방송, 종료
+  const lastBeep = useRef(0);
+  useEffect(() => {
+    const id = setInterval(() => {
+      const t = now();
+      if (group.phase === "invited" && t > group.goAt) {
+        resetGroup();
+        force((n) => n + 1);
+      }
+      if (group.phase === "waiting" && group.teleported) {
+        const left = Math.ceil(group.goAt - t);
+        if (left >= 1 && left <= 3 && left !== lastBeep.current) {
+          lastBeep.current = left;
+          sfx("checkpoint");
+        }
+      }
+      if (group.phase === "racing" && group.myFinish !== null) {
+        const me = group.entries.find((e) => e.id === myId);
+        if (me && me.ms === undefined) {
+          me.ms = group.myFinish;
+          sendRace("race_finish", { id: myId, nickname: profile.nickname, ms: group.myFinish });
+        }
+      }
+      if (group.phase === "racing") {
+        const allDone = group.entries.every((e) => e.ms !== undefined);
+        if (allDone || t > group.goAt + 240) {
+          group.phase = "done";
+          group.goAt = t; // 결과 표시 시작 시각
+          race.running = false;
+          race.next = 0;
+        }
+      }
+      if (group.phase === "done" && t - group.goAt > 10) {
+        resetGroup();
+        race.next = 0;
+      }
+    }, 200);
+    return () => clearInterval(id);
+  }, [myId, profile.nickname, sendRace]);
+
+  // 📸 사진 찍기
+  const [photoMode, setPhotoMode] = useState(false);
+  const [flash, setFlash] = useState(false);
+  const takePhoto = () => {
+    setMenuOpen(false);
+    setPhotoMode(true);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(async () => {
+        const src = document.querySelector(".game canvas") as HTMLCanvasElement | null;
+        setPhotoMode(false);
+        if (!src) return;
+        setFlash(true);
+        setTimeout(() => setFlash(false), 350);
+        sfx("buy");
+        const c = document.createElement("canvas");
+        c.width = src.width;
+        c.height = src.height;
+        const ctx2 = c.getContext("2d");
+        if (!ctx2) return;
+        ctx2.drawImage(src, 0, 0);
+        const fs = Math.round(c.width / 32);
+        ctx2.font = `bold ${fs}px "Jua", sans-serif`;
+        ctx2.fillStyle = "rgba(255,255,255,0.9)";
+        ctx2.shadowColor = "rgba(0,0,0,0.35)";
+        ctx2.shadowBlur = fs / 3;
+        ctx2.fillText(`🚲 자전거로어스 · ${map.name}`, fs * 0.8, c.height - fs * 0.9);
+        const blob: Blob | null = await new Promise((r) => c.toBlob(r, "image/png"));
+        if (!blob) return;
+        const file = new File([blob], `bicycleroers-${Date.now()}.png`, { type: "image/png" });
+        const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean };
+        if (isTouch && nav.canShare?.({ files: [file] })) {
+          try {
+            await nav.share({ files: [file], title: "자전거로어스" });
+            return;
+          } catch {
+            /* 취소하면 저장으로 */
+          }
+        }
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = file.name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      }),
+    );
+  };
   remotesRef.current = net.remotes.current;
   const map = getMap();
   const [muted, setMutedState] = useState(isMuted());
@@ -140,7 +285,7 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
   const toastId = useRef(0);
   const [, setTick] = useState(0);
   const isTouch = useMemo(
-    () => typeof window !== "undefined" && (window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 760),
+    () => typeof window !== "undefined" && (window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 760),
     [],
   );
   const [chatOpen, setChatOpen] = useState(!isTouch);
@@ -377,18 +522,19 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
   const walletNow = walletBase !== null ? walletBase + hud.stars - saved.current.stars : null;
 
   return (
-    <div className={isTouch ? "game touch-ui" : "game"}>
+    <div className={`game${isTouch ? " touch-ui" : ""}${photoMode ? " photo" : ""}`}>
       <Canvas
         shadows
         dpr={isTouch ? [1, 1.5] : [1, 2]}
         camera={{ fov: 60, near: 0.1, far: 600, position: [0, 5, -70] }}
-        gl={{ antialias: true }}
+        gl={{ antialias: true, preserveDrawingBuffer: true }}
       >
         <color attach="background" args={[map.sky.bg]} />
         <fog attach="fog" args={[map.sky.bg, map.sky.fog[0], map.sky.fog[1]]} />
         <hemisphereLight args={map.sky.hemi} />
         <ambientLight intensity={0.35} />
         <World />
+        <GhostRider />
         <Player profile={profile} anim={anim} myId={myId} lowPower={isTouch} bubble={bubbleOf(myId)} sendMove={net.sendMove} sendTrick={net.sendTrick} />
         {net.players.map((p) => (
           <RemoteRider key={p.id} player={p} remote={net.remotes.current.get(p.id)} bubble={bubbleOf(p.id)} />
@@ -440,7 +586,13 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
               {muted ? "🔇" : "🔊"}
             </button>
             <button className="btn small ghost" onClick={cycleView}>
-              📷<span className="lbl"> {viewMode === "chase" ? "뒤에서" : viewMode === "front" ? "앞에서" : "위에서"}</span>
+              🎥<span className="lbl"> {viewMode === "chase" ? "뒤에서" : viewMode === "front" ? "앞에서" : "위에서"}</span>
+            </button>
+            <button className="btn small ghost" onClick={takePhoto} aria-label="사진 찍기">📸</button>
+          </div>
+          <div className="row">
+            <button className="btn small ghost" onClick={openRace} disabled={group.phase !== "idle" && group.phase !== "done"}>
+              🏁 다 같이 레이스
             </button>
             <button className="btn small" onClick={exit} disabled={saving}>
               {saving ? "저장 중…" : <>🏁<span className="lbl"> 그만 타기</span></>}
@@ -484,10 +636,14 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
                   {muted ? "🔇 소리 꺼짐" : "🔊 소리 켜짐"}
                 </button>
                 <button className="btn small ghost" onClick={cycleView}>
-                  📷 {viewMode === "chase" ? "뒤에서" : viewMode === "front" ? "앞에서" : "위에서"}
+                  🎥 {viewMode === "chase" ? "뒤에서" : viewMode === "front" ? "앞에서" : "위에서"}
+                </button>
+                <button className="btn small ghost" onClick={takePhoto}>📸 사진 찍기</button>
+                <button className="btn small ghost" onClick={openRace} disabled={group.phase !== "idle" && group.phase !== "done"}>
+                  🏁 다 같이 레이스
                 </button>
                 <button className="btn small" onClick={exit} disabled={saving}>
-                  {saving ? "저장 중…" : "🏁 그만 타기"}
+                  {saving ? "저장 중…" : "🚪 그만 타기"}
                 </button>
               </div>
             </div>
@@ -513,6 +669,43 @@ function GameInner({ profile, wallet }: { profile: Profile; wallet: number | nul
           {hud.raceBest > 0 && !(isTouch && hud.raceOn) && <span className="best">최고 {fmtTime(hud.raceBest)}</span>}
         </div>
       )}
+
+      {/* 다 같이 레이스 */}
+      {group.phase === "invited" && (
+        <div className="group-banner">
+          <span>🏁 <b>{group.hostName}</b>님이 {map.course.name} 레이스를 열었어요! ({Math.max(0, Math.ceil(group.goAt - now()))}초)</span>
+          <button className="btn small" onClick={joinRace}>참가하기</button>
+        </div>
+      )}
+      {group.phase === "waiting" && !group.teleported && (
+        <div className="group-banner">
+          <span>🏁 레이스 출발까지 <b>{Math.max(0, Math.ceil(group.goAt - now()))}</b>초 · 참가 {group.entries.length}명 — 곧 출발선으로 이동해요</span>
+        </div>
+      )}
+      {group.phase === "waiting" && group.teleported && now() < group.goAt && (
+        <div className="countdown">{Math.max(1, Math.ceil(group.goAt - now()))}</div>
+      )}
+      {group.phase === "racing" && now() - group.goAt < 0.8 && <div className="countdown go">GO!</div>}
+      {(group.phase === "racing" || group.phase === "done") && (
+        <div className="group-results panel">
+          <b>{group.phase === "done" ? "🏆 레이스 결과" : "🏁 레이스 중"}</b>
+          <ol>
+            {[...group.entries]
+              .sort((a, b) => (a.ms ?? 1e12) - (b.ms ?? 1e12))
+              .map((e, i) => (
+                <li key={e.id} className={e.id === myId ? "me" : ""}>
+                  <span>{e.ms !== undefined ? ["🥇", "🥈", "🥉"][i] ?? `${i + 1}.` : "🚴"}</span>
+                  <span className="nm">{e.nickname}</span>
+                  <span>{e.ms !== undefined ? fmtTime(e.ms / 1000) : "달리는 중"}</span>
+                </li>
+              ))}
+          </ol>
+        </div>
+      )}
+      {ghost.best && !hud.raceOn && group.phase === "idle" && !isTouch && (
+        <div className="ghost-hint">👻 내 최고 {fmtTime(ghost.best.ms / 1000)} — 출발 게이트를 지나면 고스트와 함께 달려요</div>
+      )}
+      {flash && <div className="photo-flash" />}
 
       {/* 묘기 알림 */}
       <div className="toasts">

@@ -41,7 +41,15 @@ export interface Bubble {
 
 const CHANNEL = "bicycleroers-world";
 
-export function useNet(profile: Profile, myId: string, onBell?: (id: string) => void) {
+export interface RaceEvents {
+  onInvite?: (p: { hostId: string; hostName: string; inSec: number }) => void;
+  onJoin?: (p: { id: string; nickname: string }) => void;
+  onFinish?: (p: { id: string; nickname: string; ms: number }) => void;
+}
+
+export function useNet(profile: Profile, myId: string, onBell?: (id: string) => void, race?: RaceEvents) {
+  const raceRef = useRef(race);
+  raceRef.current = race;
   const bellRef = useRef(onBell);
   bellRef.current = onBell;
   const remotes = useRef(new Map<string, Remote>());
@@ -136,6 +144,10 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
       bellRef.current?.(p.id);
     });
 
+    ch.on("broadcast", { event: "race_invite" }, ({ payload }) => raceRef.current?.onInvite?.(payload as { hostId: string; hostName: string; inSec: number }));
+    ch.on("broadcast", { event: "race_join" }, ({ payload }) => raceRef.current?.onJoin?.(payload as { id: string; nickname: string }));
+    ch.on("broadcast", { event: "race_finish" }, ({ payload }) => raceRef.current?.onFinish?.(payload as { id: string; nickname: string; ms: number }));
+
     ch.on("broadcast", { event: "bubble" }, ({ payload }) => {
       const p = payload as { id: string; text: string };
       showBubble(p.id, p.text);
@@ -203,6 +215,11 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
     chRef.current.send({ type: "broadcast", event: "bell", payload: { id: myId } });
   }, [myId, showBubble]);
 
+  const sendRace = useCallback((event: "race_invite" | "race_join" | "race_finish", payload: Record<string, unknown>) => {
+    if (!ready.current || !chRef.current) return;
+    chRef.current.send({ type: "broadcast", event, payload });
+  }, []);
+
   const sendChat = useCallback(async (text: string) => {
     const message = text.trim().slice(0, 200);
     if (!message) return;
@@ -218,5 +235,5 @@ export function useNet(profile: Profile, myId: string, onBell?: (id: string) => 
     });
   }, [myId, profile, showBubble]);
 
-  return { remotes, players, messages, bubbles, connected, sendMove, sendEmote, sendTrick, sendBell, sendChat };
+  return { remotes, players, messages, bubbles, connected, sendMove, sendEmote, sendTrick, sendBell, sendRace, sendChat };
 }
